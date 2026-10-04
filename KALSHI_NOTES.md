@@ -174,3 +174,27 @@ or write calls were made. **[V]** = verified from the docs or a live response;
   `market_lifecycle_v2`, plus a periodic REST snapshot to verify the book.
 - In both cases: discover markets daily, and write partitioned parquet
   (`series/date/event`).
+
+## 10. Findings from the 2025 backfill (2026-10-04)
+- **Unauthenticated rate limit:** 8 req/s (4 threads) drew HTTP 429s; 3–4 req/s drew only
+  occasional ones (14 retries over ~25k requests, all recovered). The full backfill took
+  ~95 minutes and is 650 MB.
+- **Ticker oddities:**
+  - Two games use city names instead of codes (`…-BUFFALO`, `…-PHILADELPHIA`).
+  - Kalshi uses `LA` and `LAR` interchangeably for the Rams.
+  - One divisional game has a second, never-traded `KXNFLGAME` event dated a day earlier.
+    Discovery keeps the highest-volume event per game and series.
+- **Postseason winner markets:**
+  - AFC Championship: there is no `KXNFLGAME` event.
+  - NFC Championship: the `KXNFLGAME` event exists with **zero volume**.
+  - Super Bowl: there is no `KXNFLGAME` event.
+  
+  Trading for all three happened in `KXNFLAFCCHAMP`, `KXNFLNFCCHAMP` and `KXSB`.
+  `discovery.games_needing_champion_fallback()` handles this.
+- **Ladders are much thinner than winner markets:**
+  - In week 1, most spread strikes showed placeholder quotes at kickoff (a 0 bid, or a
+    20–40¢-wide market) while still trading. Strike prices therefore fall back to the
+    last hour's volume-weighted trade price.
+  - From week 2 on, every game had a usable spread and total ladder.
+- **Ladders open early:** strikes are added during the game. Only strikes open before
+  kickoff are used for the pregame line.

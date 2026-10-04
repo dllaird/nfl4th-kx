@@ -143,3 +143,10 @@ def dedupe_events(markets: pd.DataFrame) -> pd.DataFrame:
     vol = m.groupby(["game_id", "series_ticker", "event_ticker"])["volume"].sum().reset_index()
     best = vol.sort_values("volume").groupby(["game_id", "series_ticker"]).tail(1)["event_ticker"]
     return m[m["event_ticker"].isin(set(best))].reset_index(drop=True)
+
+
+def games_needing_champion_fallback(markets: pd.DataFrame, schedule: pd.DataFrame) -> list[str]:
+    """Postseason games whose KXNFLGAME winner markets are missing or never traded."""
+    win = markets[markets["series_ticker"] == WINNER].groupby("game_id")["volume"].sum()
+    post = schedule.loc[schedule["game_type"].isin(["CON", "SB"]), "game_id"]
+    return [g for g in post if win.get(g, 0) <= 0]
