@@ -143,3 +143,10 @@ data now (≈ 1.2 seasons):
 - Order-book history is not available from Kalshi (KALSHI_NOTES §7). Depth fields in the
   dataset will be absent for 2025, and quality is measured from trade density, trade-price
   dispersion and candle bid/ask width instead.
+- **(2026-10-04) Team strength for the conversion model = Kalshi pregame values only.**
+  The implied spread and total come from the KXNFLSPREAD / KXNFLTOTAL ladders just
+  before kickoff and are held fixed for the whole game, the same way nfl4th uses the
+  pregame line. The pregame KXNFLGAME price is a consistency check. No live ladders, no
+  in-game rescaling.
+- **(2026-10-04) No live recorder.** Phase 2 delivers the read-only REST client and the
+  2025 backfill only. No WebSocket client, so no API key is needed.

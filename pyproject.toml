@@ -15,6 +15,7 @@ dependencies = [
   "pyarrow>=14",     # parquet artifacts, fixtures, recorder output
   "xgboost>=2.0",    # exported nfl4th / nflfastR boosters
   "requests>=2.31",  # Kalshi REST, ESPN, nflverse schedules
+  "scipy>=1.11",     # ladder distribution fits (normal / skew-normal)
 ]
 
 [project.optional-dependencies]

@@ -59,3 +59,4 @@ __pycache__/
 # credentials: never commit
 .env
 *.pem
+data_cache/
