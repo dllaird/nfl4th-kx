@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nfl4th-py"
+version = "0.1.0"
+description = "Python port of nfl4th with Kalshi market-implied valuation of 4th-down decisions"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "pyarrow>=14",     # parquet artifacts, fixtures, recorder output
+  "xgboost>=2.0",    # exported nfl4th / nflfastR boosters
+  "requests>=2.31",  # Kalshi REST, ESPN, nflverse schedules
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["nfl4th_py*"]
+
+[tool.setuptools.package-data]
+nfl4th_py = ["data/*.json", "data/*.json.gz", "data/*.parquet"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
