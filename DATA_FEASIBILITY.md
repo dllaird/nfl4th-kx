@@ -129,3 +129,17 @@ data now (≈ 1.2 seasons):
 - Every week of recording adds ~2,500 plays. **Waiting until the end of the 2026 season
   roughly doubles the data.** This argues for starting the recorder immediately (Phase 2)
   and for a time-based holdout on late-2026 weeks.
+
+## 4. Decisions (2026-10-04)
+
+- **Price source: the Kalshi trade tape** (`/historical/trades`). Pre-snap and settled
+  post-play prices are built from trades, with taker side used as a bid/ask proxy.
+  1-minute candles are used only for quote-quality fields and as a fallback, and are
+  tagged as such.
+- **Scope: the 2025 season** (285 regular + postseason games with Kalshi winner, spread
+  and total markets, ~38k snaps). 2026 games are out of scope for the training and
+  validation data. The time-based holdout comes from the latest 2025 weeks (late regular
+  season + playoffs).
+- Order-book history is not available from Kalshi (KALSHI_NOTES §7). Depth fields in the
+  dataset will be absent for 2025, and quality is measured from trade density, trade-price
+  dispersion and candle bid/ask width instead.
