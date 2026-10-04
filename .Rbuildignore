@@ -14,3 +14,12 @@
 ^[.]?air[.]toml$
 ^\.vscode$
 ^\.git-blame-ignore-revs$
+^nfl4th_py$
+^pyproject\.toml$
+^scripts$
+^\.venv$
+^PORTING_NOTES\.md$
+^KALSHI_NOTES\.md$
+^DATA_FEASIBILITY\.md$
+^tests/fixtures$
+^tests/.*\.py$

@@ -1,0 +1,68 @@
+{
+  "generated_at": "2026-10-04 19:15:04 UTC",
+  "r_version": "R version 4.6.1 (2026-06-24 ucrt)",
+  "packages": {
+    "nfl4th": "1.0.7",
+    "nflfastR": "6.0.0",
+    "fastrmodels": "2.1.0",
+    "xgboost": "3.2.1.1",
+    "mgcv": "1.9.4"
+  },
+  "models": {
+    "fd_model": {
+      "file": "fd_model.json.gz",
+      "features": ["down", "ydstogo", "yardline_100", "era3", "era4", "outdoors", "retractable", "dome", "posteam_spread", "total_line", "posteam_total"],
+      "num_feature": 11,
+      "objective": "multi:softprob",
+      "num_class": 76,
+      "rounds": 1124,
+      "hash": "5e84193f9a9538daddd5487a02213849fa78c0c38e59a12a493d4577fa64f31a"
+    },
+    "two_pt_model": {
+      "file": "two_pt_model.json.gz",
+      "features": ["era2", "era3", "era4", "outdoors", "retractable", "dome", "posteam_spread", "total_line", "posteam_total"],
+      "num_feature": 9,
+      "objective": "binary:logistic",
+      "num_class": 0,
+      "rounds": 21,
+      "hash": "5b8fea7231a03af633b44c825f1ad4945e0bb71bae1bea20af07d020b2118671"
+    },
+    "home_wp_model": {
+      "file": "home_wp_model.json.gz",
+      "features": ["home_receive_2h_ko", "spread_time", "home_posteam", "half_seconds_remaining", "game_seconds_remaining", "Diff_Time_Ratio", "home_score_differential", "home_ep", "ydstogo", "home_yardline_100", "home_timeouts_remaining"],
+      "num_feature": 11,
+      "objective": "binary:logistic",
+      "num_class": 0,
+      "rounds": 3775,
+      "hash": "bc990443753ddfe62369553bf01f196d0beafa06be2184fa3a826e5d5527cc04"
+    },
+    "ep_model": {
+      "file": "ep_model.json.gz",
+      "features": ["half_seconds_remaining", "yardline_100", "home", "retractable", "dome", "outdoors", "ydstogo", "era0", "era1", "era2", "era3", "era4", "down1", "down2", "down3", "down4", "posteam_timeouts_remaining", "defteam_timeouts_remaining"],
+      "num_feature": 18,
+      "objective": "multi:softprob",
+      "num_class": 7,
+      "rounds": 525,
+      "hash": "eb46531d1097ec78f639da1c33c6ed81f11f846b68a01add495ea8c97de36866"
+    },
+    "wp_spread_model": {
+      "file": "wp_spread_model.json.gz",
+      "features": ["receive_2h_ko", "spread_time", "home", "half_seconds_remaining", "game_seconds_remaining", "Diff_Time_Ratio", "score_differential", "down", "ydstogo", "yardline_100", "posteam_timeouts_remaining", "defteam_timeouts_remaining"],
+      "num_feature": 12,
+      "objective": "binary:logistic",
+      "num_class": 0,
+      "rounds": 534,
+      "hash": "40d3d83ee35e3455b4b15c0e0589ded4923f1ea6e21ea29467f6f83df40d5ac9"
+    }
+  },
+  "fg_lookup": {
+    "file": "fg_lookup.parquet",
+    "rows": 396,
+    "hash": "6bd1bfaed6646e88e6a1f2caedcf1750e6f9bdca6cbc3d4367c70a447956b9a1"
+  },
+  "punt_df": {
+    "file": "punt_df.parquet",
+    "rows": 5483,
+    "hash": "dd5ba615e6ed4d15704d10d3e99d96dc8f12473465bc0360d85e70bfedb6728d"
+  }
+}

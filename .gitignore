@@ -50,3 +50,12 @@ po/*~
 # model debris
 *.ubj
 
+
+# Python port
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+# credentials: never commit
+.env
+*.pem
