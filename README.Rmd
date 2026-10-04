@@ -26,6 +26,17 @@ This is the package that powers the [fourth down calculator](https://rbsdm.com/s
 
 The code that powers the Twitter fourth down bot [is in this folder here](https://github.com/guga31bb/fourth_calculator/tree/main/bot) and the [code that runs the Shiny app is here](https://github.com/guga31bb/fourth_calculator/blob/main/app.R).
 
+## Python port (`nfl4th_py`) — work in progress
+
+This fork adds `nfl4th_py`, a Python port of nfl4th that will value 4th-down options
+with Kalshi market prices instead of a win probability model. The conversion, field goal
+and punt components are ported faithfully from this package and match it to within 1e-6
+on a 2,180-play fixture set (`tests/`). See `PORTING_NOTES.md`, `KALSHI_NOTES.md` and
+`DATA_FEASIBILITY.md`.
+
+All credit for nfl4th and its models goes to Ben Baldwin and the nflverse contributors
+(nfl4th, nflfastR, fastrmodels), whose work is used here under the MIT license.
+
 ## Installation
 
 The easiest way to get the released version of nfl4th is to install it from [CRAN](https://cran.r-project.org/package=nfl4th) with:

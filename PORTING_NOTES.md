@@ -229,7 +229,40 @@ available. Neither currently has `xgboost`, `pandas`, `polars` or `pyarrow`. Pha
 add a `pyproject.toml` with `xgboost`, `numpy`, `pandas`, `pyarrow`, `requests`,
 `websockets`, `cryptography` (Kalshi signing) and `pytest`.
 
-## 6. Parity plan notes (for Phase 1)
+## 5b. Bug found during the port: `runoff` never applies (R)
+
+In `get_go_wp()` (`decision_functions.R:354-355`), `max(half_seconds_remaining, 0)` runs
+inside a grouped `mutate()`, so it returns one scalar per play: the maximum over all of
+that play's outcomes, and 0. Every outcome therefore gets `pre-play clock − 6` (floored
+at 0). The optional `runoff` input has **no effect** (verified in R: `go_wp` is identical
+with `runoff = 40` and `runoff = 0`). The heuristic run-off that `get_4th_plays()` adds
+for late-game conversions with a lead is silently ignored. `outcomes.go_outcomes()`
+reproduces this for parity and marks it as an R quirk. The market-based decision path
+(Phase 6) should apply the run-off correctly, since leading teams do bleed clock after a
+conversion.
+
+## 6. Parity results (Phase 1)
+
+`scripts/make_fixtures.R` → 2,180 plays from nflfastR 2023–2025 in these strata:
+random 1,200, end of Q4 235, long FG 178, end of Q2 139, goal-to-go 127, backed-up 108,
+synthetic runoff 100, FG impossible (53+) 53, and OT 40 (flagged `r_supported = False`).
+On the 2,140 supported plays:
+
+| column | max abs diff vs R |
+|---|---|
+| first_down_prob | 5.1e-8 |
+| fg_make_prob | 0 |
+| wp_fail / wp_succeed / go_wp | 1.1e-7 / 8.2e-8 / 4.4e-8 |
+| miss_fg_wp / make_fg_wp / fg_wp | 5.4e-8 / 5.6e-8 / 5.4e-8 |
+| punt_wp (incl. NA pattern) | 4.5e-8 |
+| go_boost (percentage points) | 7.6e-6 |
+| add_2pt_probs columns (600 plays) | < 1e-3 (test) |
+| WP valuation on 2,000 perturbed states | 5.6e-8 |
+
+Recommendation agreement is **2,140 / 2,140 (100%)**, so there are no near-ties to
+explain. All residual differences are xgboost float32 rounding.
+
+### Original parity plan notes
 
 - Fixture source: nflfastR 2023–2025 4th downs (≥ 2,000), stratified to include: the last
   2 minutes of Q2 (`flip_half` path), the last 2 minutes of Q4 with each timeout count
