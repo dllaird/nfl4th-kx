@@ -241,3 +241,92 @@ __all__ = [
     "conversion",
     "field_goal",
 ]
+
+
+# --------------------------------------------------------------------------------------
+# Benchmark for the market-response model (Phase 5): value arbitrary observed states with
+# the nfl4th WP models, using an implied spread solved so the pre-play WP matches the
+# pre-play market price.
+
+
+def _model_roof(roof: pd.Series) -> pd.Series:
+    return roof.where(roof.isin(["dome", "outdoors"]), "retractable")
+
+
+def states_frame(d: pd.DataFrame, which: str) -> pd.DataFrame:
+    """nfl4th-style frame for the pre-play ('pre') or post-play ('post') state of Phase 4
+    dataset rows. WP is always for the pre-play posteam (original_posteam). Kickoff
+    states are valued as nfl4th does: receiving team 1st & 10 at its 25."""
+    p = "" if which == "pre" else "post_"
+    f = pd.DataFrame(index=d.index)
+    f["home_team"], f["away_team"] = d["home_team"], d["away_team"]
+    f["original_posteam"] = d["posteam"]
+    f["posteam"] = d[f"{p}posteam"]
+    f["season"] = d["season"]
+    f["roof"] = _model_roof(d["roof"])
+    f["home_opening_kickoff"] = d["home_opening_kickoff"]
+    f["qtr"] = d[f"{p}qtr"]
+    f["down"] = d[f"{p}down"]
+    f["ydstogo"] = d[f"{p}ydstogo"]
+    f["yardline_100"] = d[f"{p}yardline_100"]
+    f["score_differential"] = d[f"{p}score_differential"]
+    f["half_seconds_remaining"] = d[f"{p}half_seconds_remaining"]
+    f["game_seconds_remaining"] = d[f"{p}game_seconds_remaining"]
+    f["posteam_timeouts_remaining"] = d[f"{p}posteam_timeouts_remaining"]
+    f["defteam_timeouts_remaining"] = d[f"{p}defteam_timeouts_remaining"]
+    is_home = f["posteam"] == f["home_team"]
+    f["home_timeouts_remaining"] = np.where(is_home, f["posteam_timeouts_remaining"], f["defteam_timeouts_remaining"])
+    f["away_timeouts_remaining"] = np.where(is_home, f["defteam_timeouts_remaining"], f["posteam_timeouts_remaining"])
+    kind = d[f"{p}kind"] if which == "post" else d["kind"]
+    ko = (kind == "kickoff").to_numpy()
+    f.loc[ko, "down"], f.loc[ko, "ydstogo"], f.loc[ko, "yardline_100"] = 1, 10, 75
+    f["kind"] = kind
+    f["elapsed_share"] = (3600 - f["game_seconds_remaining"]) / 3600
+    f["home_receive_2h_ko"] = np.select(
+        [(f["qtr"] <= 2) & (f["home_opening_kickoff"] == 1), (f["qtr"] <= 2) & (f["home_opening_kickoff"] == 0)],
+        [-1, 1], 0,
+    )
+    # columns the 2-pt model reads for PAT states (set per spread in value_states)
+    f["era2"], f["era3"], f["era4"] = 0, 0, 1
+    f["outdoors"] = (f["roof"] == "outdoors").astype(int)
+    f["dome"] = (f["roof"] == "dome").astype(int)
+    f["retractable"] = (f["roof"] == "retractable").astype(int)
+    f["fg_model_roof"] = (f["roof"] == "outdoors").astype(int).astype(str) + "1"
+    return f
+
+
+def value_states(f: pd.DataFrame, home_spread: np.ndarray, total: np.ndarray) -> np.ndarray:
+    """WP of original_posteam in each state for a given home spread line and total.
+    PAT states use nfl4th's TD valuation (best of kicking and going for 2)."""
+    g = f.copy()
+    g["spread_line"] = home_spread
+    g["total_line"] = total
+    g["spread_time"] = g["spread_line"] * np.exp(-4 * g["elapsed_share"])
+    is_home = g["posteam"] == g["home_team"]
+    g["posteam_spread"] = np.where(is_home, g["spread_line"], -g["spread_line"])
+    g["posteam_total"] = (g["total_line"] + g["posteam_spread"]) / 2
+    wp = calculate_win_probability(g)
+    pat = (g["kind"] == "pat").to_numpy()
+    if pat.any():
+        wp[pat] = _pat_values(g.loc[pat])["wp_td"].to_numpy()
+    return wp
+
+
+def solve_home_spread(pre: pd.DataFrame, price: np.ndarray, total: np.ndarray, lo: float = -40.0, hi: float = 40.0, iters: int = 30) -> tuple[np.ndarray, np.ndarray]:
+    """Bisection for the home spread making the pre-play WP equal the market price.
+    Returns (spread, matched) where matched is False if the price is outside the WP
+    range reachable within [lo, hi] (the spread is then the nearer bound)."""
+    a, b = np.full(len(pre), lo), np.full(len(pre), hi)
+    fa = value_states(pre, a, total) - price
+    fb = value_states(pre, b, total) - price
+    matched = np.sign(fa) != np.sign(fb)
+    nearer_lo = np.abs(fa) < np.abs(fb)
+    for _ in range(iters):
+        m = (a + b) / 2
+        fm = value_states(pre, m, total) - price
+        left = np.sign(fm) == np.sign(fa)
+        a, fa = np.where(left, m, a), np.where(left, fm, fa)
+        b = np.where(left, b, m)
+    s = (a + b) / 2
+    s = np.where(matched, s, np.where(nearer_lo, lo, hi))
+    return s, matched

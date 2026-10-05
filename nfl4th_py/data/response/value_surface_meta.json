@@ -1,0 +1,18 @@
+{
+ "features": [
+  "kind_pat",
+  "kind_kickoff",
+  "fp",
+  "score_diff",
+  "down",
+  "ydstogo",
+  "qtr",
+  "game_seconds_remaining",
+  "half_seconds_remaining",
+  "team_timeouts",
+  "opp_timeouts",
+  "team_spread",
+  "total"
+ ],
+ "best_iteration": 536
+}

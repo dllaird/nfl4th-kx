@@ -36,7 +36,7 @@ PBP_COLS = [
     "interception", "fumble_lost", "safety", "penalty", "penalty_team", "penalty_yards",
     "first_down", "fourth_down_converted", "fourth_down_failed", "third_down_converted",
     "third_down_failed", "field_goal_result", "kick_distance", "extra_point_result",
-    "two_point_conv_result", "punt_blocked", "punt_inside_twenty", "touchback", "aborted_play",
+    "two_point_conv_result", "two_point_attempt", "punt_blocked", "punt_inside_twenty", "touchback", "aborted_play",
     "qb_kneel", "qb_spike", "time_of_day", "end_clock_time", "spread_line", "total_line",
     "ep", "epa", "wp", "vegas_wp", "vegas_home_wp", "wpa",
 ]

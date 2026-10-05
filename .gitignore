@@ -60,3 +60,5 @@ __pycache__/
 .env
 *.pem
 data_cache/
+reports/response_oof.parquet
+reports/response_holdout.parquet

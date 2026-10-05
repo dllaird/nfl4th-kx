@@ -37,6 +37,22 @@ class AlignConfig:
     stale_s: float = 60.0  # no trade within this long before a reference time = stale
 
 
+def state_kind(play_type: pd.Series, down: pd.Series, two_point: pd.Series, yardline_100: pd.Series) -> pd.Series:
+    """What kind of snap a state is: `scrimmage` (has a down), `pat` (extra point or
+    2-point try) or `kickoff`. Penalty no-plays without a down are classified by spot
+    (PAT/2-pt spots are inside the 20; kickoffs are from the kicking team's 35 or so)."""
+    kind = np.where(
+        down.notna(),
+        "scrimmage",
+        np.where(
+            (play_type == "extra_point") | (two_point.fillna(0) == 1),
+            "pat",
+            np.where(play_type == "kickoff", "kickoff", np.where(yardline_100 < 20, "pat", "kickoff")),
+        ),
+    )
+    return pd.Series(kind, index=play_type.index)
+
+
 def _ts(s: pd.Series) -> pd.Series:
     t = pd.to_datetime(s, utc=True, format="ISO8601")
     return t.map(lambda x: x.timestamp() if pd.notna(x) else np.nan).astype(float)
@@ -54,6 +70,8 @@ def prepare_plays(pbp: pd.DataFrame) -> pd.DataFrame:
     nxt = p.groupby("game_id")
     for c in STATE_COLS:
         p[f"post_{c}"] = nxt[c].shift(-1)
+    p["kind"] = state_kind(p["play_type"], p["down"], p["two_point_attempt"], p["yardline_100"])
+    p["post_kind"] = nxt["kind"].shift(-1)
     p["next_snap_ts"] = nxt["snap_ts"].shift(-1)
     p["next_play_id"] = nxt["play_id"].shift(-1)
     p["prev_end_ts"] = nxt["end_ts"].shift(1)
