@@ -86,6 +86,23 @@ def test_support_threshold_refuses(games):
     assert "support" in out.loc[0, "no_recommendation_reason"]
 
 
+def test_fg_uses_kicker_and_drops_hopeless_attempts(games):
+    from nfl4th_py.models.kicker import KickerFGModel
+
+    km = KickerFGModel.load()
+    k = km.kickers[(km.kickers["fg_attempts"] >= 100) & (km.kickers["last_season"] == 2025)]
+    strong = k.index[np.argmax(km.predict(np.full(len(k), 60.0), k.index.to_numpy(), 0, 2025))]
+    weak = k.index[np.argmin(km.predict(np.full(len(k), 60.0), k.index.to_numpy(), 0, 2025))]
+    out = run([_play(yardline_100=43, kicker_player_id=strong), _play(yardline_100=43, kicker_player_id=weak),
+               _play(yardline_100=85)], [_snap()] * 3, games)
+    assert out.loc[0, "fg_make_prob"] > out.loc[1, "fg_make_prob"]
+    assert out.loc[0, "fg_offered"] and out.loc[1, "fg_offered"]
+    # a 102-yard attempt is not offered: no FG value and no support veto from it
+    assert not out.loc[2, "fg_offered"] and pd.isna(out.loc[2, "fg_ev"])
+    assert 0 < out.loc[2, "fg_make_prob"] < 0.01
+    assert "fg:" not in (out.loc[2, "no_recommendation_reason"] or "")
+
+
 def test_no_punt_inside_31(games):
     out = run([_play(yardline_100=20)], [_snap()], games)
     assert pd.isna(out.loc[0, "punt_ev"])

@@ -25,6 +25,7 @@ from backtest_inputs import engine_inputs  # noqa: E402
 from nfl4th_py import decision, prep  # noqa: E402
 from nfl4th_py.market import alignment  # noqa: E402
 from nfl4th_py.market.response import TransitionModel  # noqa: E402
+from nfl4th_py.models.kicker import KickerFGModel  # noqa: E402
 from nfl4th_py.models import wp_baseline  # noqa: E402  (benchmark only)
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,7 +43,12 @@ def actual_choice(d: pd.DataFrame) -> pd.Series:
     )
 
 
-def run_engine(f: pd.DataFrame, games: pd.DataFrame, folds: pd.Series, models: dict, snap_override=None) -> pd.DataFrame:
+# kicker model fit on 2014-2024 only, so 2025 FG probabilities are out-of-sample
+FG_MODEL = KickerFGModel.load(CACHE / "kicker_model_le2024.json")
+
+
+def run_engine(f: pd.DataFrame, games: pd.DataFrame, folds: pd.Series, models: dict, snap_override=None,
+               config: decision.DecisionConfig = decision.DecisionConfig()) -> pd.DataFrame:
     plays, snap = engine_inputs(f)
     if snap_override is not None:
         snap = snap_override(snap, f)
@@ -52,7 +58,8 @@ def run_engine(f: pd.DataFrame, games: pd.DataFrame, folds: pd.Series, models: d
     for k, model in models.items():
         m = fold == k
         if m.any():
-            r = decision.add_4th_probs(plays[m].reset_index(drop=True), snap[m].reset_index(drop=True), games, model=model)
+            r = decision.add_4th_probs(plays[m].reset_index(drop=True), snap[m].reset_index(drop=True), games,
+                                       model=model, fg_model=FG_MODEL, config=config)
             r.index = f.index[m]
             out.append(r)
     return pd.concat(out).loc[f.index]
@@ -85,14 +92,15 @@ def main() -> None:
     # ---- market engine (out-of-sample) and original nfl4th
     eng = run_engine(f, games, folds, models)
     plays, _ = engine_inputs(f)
-    orig = wp_baseline.add_4th_probs_baseline(plays, games)
+    orig = wp_baseline.add_4th_probs_baseline(plays.drop(columns=["kicker_player_id", "wind", "temp"]), games)
     f["engine_rec"] = eng["recommendation"]
     f["nfl4th_rec"] = rec_of(orig)
     for o in OPTS:
         f[f"engine_{o}_ev"] = eng[f"{o}_ev"]
         f[f"engine_{o}_sd"] = eng[f"{o}_sd"]
         f[f"nfl4th_{o}_wp"] = orig[f"{o}_wp"]
-    for c in ("ev_gap", "ev_gap_sd", "prob_best_option_is_best", "no_recommendation_reason", "go_boost", "first_down_prob"):
+    for c in ("ev_gap", "ev_gap_sd", "prob_best_option_is_best", "no_recommendation_reason", "go_boost",
+              "first_down_prob", "fg_make_prob", "fg_offered"):
         f[f"engine_{c}"] = eng[c]
     f["nfl4th_go_boost"] = orig["go_boost"]
 
@@ -158,6 +166,17 @@ def main() -> None:
         followed=lambda x: np.where(x["actual"] == x["engine_rec"], "engine", np.where(x["actual"] == x["nfl4th_rec"], "nfl4th", "neither")))
     summary["disagreement_market_move_by_choice_pts"] = (
         by_follow.groupby("followed")["market_move"].agg(["mean", "size"]).assign(mean=lambda x: 100 * x["mean"]).to_dict("index"))
+
+    # ---- FG eligibility threshold: how coverage and recommendations change
+    fg_thr = {}
+    for thr in (0.0, 0.005, 0.01, 0.02, 0.05):
+        o = run_engine(f, games, folds, models, config=decision.DecisionConfig(fg_min_make_prob=thr))
+        rr = o["recommendation"]
+        fg_thr[str(thr)] = {"recommended": int(rr.notna().sum()), "go": int((rr == "go").sum()),
+                            "fg": int((rr == "fg").sum()), "punt": int((rr == "punt").sum()),
+                            "refused_fg_support": int(o["no_recommendation_reason"].fillna("").str.contains("fg: outcome").sum())}
+    summary["fg_min_make_prob_sweep"] = fg_thr
+    summary["kicker_known_share"] = float(plays["kicker_player_id"].notna().mean())
 
     # ---- sensitivity
     base = eng

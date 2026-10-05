@@ -6,8 +6,26 @@ the information available just before each snap.
 
 from __future__ import annotations
 
+from functools import cache
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
+
+from nfl4th_py.models import kicker
+
+CACHE = Path(__file__).resolve().parents[1] / "data_cache"
+
+
+@cache
+def _kicker_lookup() -> pd.DataFrame:
+    return kicker.team_kickers(pd.read_parquet(CACHE / "kicks_2014_2025.parquet"))
+
+
+@cache
+def _weather() -> pd.DataFrame:
+    w = pd.read_parquet(CACHE / "pbp_2025.parquet", columns=["game_id", "temp", "wind"])
+    return w.groupby("game_id").first()
 
 
 def engine_inputs(d: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -28,6 +46,12 @@ def engine_inputs(d: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             "defteam_timeouts_remaining": d["defteam_timeouts_remaining"].to_numpy(),
         }
     )
+    lk = _kicker_lookup()
+    plays["kicker_player_id"] = [kicker.kicker_for(lk, g, t, s, w) for g, t, s, w in
+                                 zip(d["game_id"], d["posteam"], d["season"], d["week"])]
+    wx = _weather()
+    plays["wind"] = d["game_id"].map(wx["wind"]).to_numpy(dtype=float)
+    plays["temp"] = d["game_id"].map(wx["temp"]).to_numpy(dtype=float)
     snap = pd.DataFrame(
         {
             "price": d["pre_price"].to_numpy(),

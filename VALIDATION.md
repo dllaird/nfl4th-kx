@@ -50,50 +50,57 @@ adopted.
 
 ## 2. Decision backtest (3,997 4th downs)
 
+Field goal make probabilities come from the kicker-specific model fit on 2014–2024
+(FIELD_GOALS.md), so they are out-of-sample for 2025 as well.
+
 ### Coverage
 | | count |
 |---|---|
-| engine recommendation | 2,444 (punt 934, FG 825, go 685) |
-| no recommendation | 1,553 (38.9%) |
+| engine recommendation | 3,003 (punt 1,406, FG 858, go 739) |
+| no recommendation | 994 (24.9%) |
 | original nfl4th (betting lines) | go 1,655, punt 1,381, FG 961 (always recommends) |
 
 Refusal reasons (a play can have several):
 
 | reason | plays |
 |---|---|
-| outcome states outside model support | 666 |
 | winner price outside [0.03, 0.97] | 535 |
 | final 120 s of regulation | 250 |
 | Kalshi pregame spread / total ladder unusable | 154 / 115 |
+| outcome states outside model support | 85 |
 | stale price (> 30 s) | 77 |
 | market wider than 4¢ | 73 |
 | no price | 31 |
 | halted (no trade in 60 s) | 31 |
 | OT | 24 |
 
-### Engine vs original nfl4th (2,444 plays where the engine recommends)
-- **Agreement: 77.9%.** Rows are the engine's choice, columns nfl4th's:
+Before the kicker model, 666 plays were refused for support. 590 of those were refused
+only because the engine valued a field goal from beyond the 53, which nfl4th treats as
+0%. See §5.
+
+### Engine vs original nfl4th (3,003 plays where the engine recommends)
+- **Agreement: 80.0%.** Rows are the engine's choice, columns nfl4th's:
 
   | engine \ nfl4th | go | FG | punt |
   |---|---|---|---|
-  | go | **625** | 48 | 12 |
-  | FG | 200 | **625** | 0 |
-  | punt | 219 | 61 | **654** |
+  | go | **685** | 38 | 16 |
+  | FG | 215 | **642** | 1 |
+  | punt | 277 | 54 | **1,075** |
 
-  The engine is **less aggressive** than nfl4th. Of 1,044 plays where nfl4th says go, the
-  engine kicks 419 times.
-- **Coaches' actual choices** matched the engine 82.5% of the time and nfl4th 72.5%.
-- **Disagreements (540):**
+  The engine is **less aggressive** than nfl4th. Of 1,177 plays where nfl4th says go, the
+  engine kicks 492 times.
+- **Coaches' actual choices** matched the engine 83.9% of the time and nfl4th 73.8%.
+- **Disagreements (601):**
   - By the engine's market valuation, its choice is worth +0.85 points more than nfl4th's.
-  - By nfl4th's WP, nfl4th's choice is worth +1.13 points more than the engine's.
-  - **96.7% of the engine's disagreement margins are within one standard deviation of its
-    own uncertainty,** and 58% of nfl4th's margins are under 1 WP point.
-  
+  - By nfl4th's WP, nfl4th's choice is worth +1.11 points more than the engine's.
+  - **96.8% of the engine's disagreement margins are within one standard deviation of its
+    own uncertainty,** and 60% of nfl4th's margins are under 1 WP point.
+
   Most disagreements are near-ties under both methods.
 
 ### What the market did afterward
 - **EV of the option actually taken vs the settled price** (3,052 plays in range):
-  - Engine: mean (settled − EV) = **+0.10 points**, MAE 2.63, correlation 0.987.
+  - Engine: mean (settled − EV) = **+0.06 points**, MAE 2.61, correlation 0.99.
   - The original nfl4th WP is not anchored to the market. Its WP of the actual choice
     differs from the settled price by −0.37 points on average (MAE 4.63).
 - **By option** (engine, game-clustered 90% CI):
@@ -101,7 +108,7 @@ Refusal reasons (a play can have several):
   | option | mean (settled − EV) | 90% CI | n |
   |---|---|---|---|
   | go | **+0.51** | [−0.02, +1.04] | 552 |
-  | FG | +0.05 | [−0.17, +0.26] | 832 |
+  | FG | −0.08 | [−0.29, +0.13] | 832 |
   | punt | −0.01 | [−0.13, +0.11] | 1,668 |
 
   When teams went for it, the market ended about half a point higher than the engine
@@ -112,12 +119,31 @@ Refusal reasons (a play can have several):
   - **Consequence:** the engine likely leans slightly against going for it. That is about
     the size of a typical disagreement margin.
 - **Disagreement plays, by whose advice the coach followed:**
-  - Followed the engine (n = 387): the market moved −0.48 points on average.
+  - Followed the engine (n = 446): the market moved −0.46 points on average.
   - Followed nfl4th (n = 144): +0.17 points.
-  - Difference: −0.64 points, 90% CI [−1.45, +0.21]. This is not significant, but it
+  - Difference: −0.63 points, 90% CI [−1.64, +0.29]. This is not significant, but it
     points the same way as the go-for-it bias.
   - **Caution:** this compares realized outcomes, not counterfactuals. The two groups
     differ in situation, and the market had already priced the expected choice.
+- **Field goal make probabilities on the 2025 attempts teams actually tried**
+  (kicker model fit through 2024):
+
+  | distance | n | made | predicted |
+  |---|---|---|---|
+  | < 40 | 455 | 94.5% | 95.0% |
+  | 40–49 | 238 | 80.7% | 79.5% |
+  | 50–54 | 97 | 72.2% | 71.0% |
+  | 55–59 | 37 | 64.9% | 62.3% |
+  | 60+ | 5 | 40.0% | 35.6% |
+
+### What knowing the kicker changes
+The same backtest with every kicker replaced by the league curve changes 62 of 2,995
+recommendations (2.1%).
+- **Direction:** mostly a strong kicker turns a go (35) or a punt (21) into a field goal
+  from 44–50 yards. The most frequent kickers are Aubrey 10, Boswell 7, Butker 6 and
+  Slye 5.
+- **Coaches:** on those 62 plays, coaches made the kicker-specific call 71% of the time
+  and the league-curve call 29%.
 
 ### Example disagreements
 Gap is the engine's EV gap ± sd, in points.
@@ -126,24 +152,25 @@ Gap is the engine's EV gap ± sd, in points.
 |---|---|---|---|---|---|
 | 2025_03_LA_PHI | Q2 0:14, 4th & 2 at 28, +9 | FG by 6.2 ± 3.0 | go (+1.3) | FG, good | 0.72 → 0.76 |
 | 2025_04_LAC_NYG | Q4 5:44, 4th & 3 at 3, +3 | FG by 5.5 ± 4.2 | go (+1.6) | go, incomplete | 0.66 → 0.59 |
-| 2025_21_LA_SEA | Q4 4:59, 4th & 4 at 6, −4 | FG by 4.0 ± 3.7 | go (+3.9) | go, incomplete | 0.40 → 0.25 |
+| 2025_15_IND_SEA | Q4 13:28, 4th & 7 at 14, −4 | FG by 4.7 ± 3.4 | go (+1.3) | FG, good | 0.61 → 0.62 |
+| 2025_11_BAL_CLE | Q4 14:09, 4th & 5 at 5, −6 | FG by 4.6 ± 2.8 | go (+1.8) | FG, good | 0.65 → 0.60 |
 | 2025_07_GB_ARI | Q4 8:05, 4th & 6 at own 20, −3 | punt by 1.8 ± 3.3 | go (+5.1) | punt | 0.37 → 0.38 |
-| 2025_03_LA_PHI | Q4 12:24, 4th & 7 at 50, −5 | punt by 1.0 ± 3.7 | go (+3.5) | go, incomplete | 0.45 → 0.31 |
-| 2025_16_LV_HOU | Q3 3:14, 4th & 1 at 31, −1 | go by 2.3 ± 2.2 | FG (−1.5) | FG, good | 0.76 → 0.78 |
-| 2025_15_MIN_DAL | Q3 2:49, 4th & 3 at 37, −6 | go by 1.2 ± 2.3 | FG (−1.1) | go, +23 yards | 0.26 → 0.36 |
+| 2025_11_BAL_CLE | Q2 0:35, 4th & 2 at own 42, −6 | punt by 0.4 ± 3.5 | go (+4.4) | punt | 0.58 → 0.58 |
+| 2025_16_LV_HOU | Q3 3:14, 4th & 1 at 31, −1 | go by 1.9 ± 2.1 | FG (−1.5) | FG, good | 0.76 → 0.78 |
+| 2025_12_PIT_CHI | Q4 4:46, 4th & 2 at own 40, +3 | go by 1.9 ± 4.9 | punt (−0.4) | punt | 0.67 → 0.70 |
 
 The full list is in `reports/backtest_disagreements.parquet`.
 
-## 3. Sensitivity (2,400–2,450 recommended plays each)
+## 3. Sensitivity (2,925–3,003 recommended plays each)
 | perturbation | recommendation flips | mean abs. change in go_boost |
 |---|---|---|
-| pre-play price −1 point / +1 point | 0.46% / 0.41% | 0.05 points |
-| posteam pregame spread −1 / +1 point | 0.98% / 1.02% | 0.05 points |
-| price 5 s stale | 0.25% (0.050%/s) | 0.03 points |
-| price 10 s stale | 0.34% (0.034%/s) | 0.03 points |
-| price 20 s stale | 0.38% (0.019%/s) | 0.04 points |
-| price 30 s stale | 0.71% (0.024%/s) | 0.08 points |
-| price 60 s stale | 1.64% (0.027%/s) | 0.13 points |
+| pre-play price −1 point / +1 point | 0.44% / 0.50% | 0.06 points |
+| posteam pregame spread −1 / +1 point | 0.77% / 0.60% | 0.05 points |
+| price 5 s stale | 0.17% (0.034%/s) | 0.03 points |
+| price 10 s stale | 0.27% (0.027%/s) | 0.04 points |
+| price 20 s stale | 0.31% (0.015%/s) | 0.05 points |
+| price 30 s stale | 0.85% (0.028%/s) | 0.09 points |
+| price 60 s stale | 1.13% (0.019%/s) | 0.15 points |
 
 Recommendations are stable to small price and spread changes. A 1-point price move shifts
 all options by nearly the same amount, so it rarely reorders them. Staleness of up to 30 s
@@ -178,6 +205,25 @@ extreme prices, and 104 (2.6%) for stale, wide, halted or missing prices.
 3. **Support as a percentile.** The original support score made even real 4th-down
    transitions look unsupported. It is now the percentile of training-data typicality,
    and thresholds are set from out-of-fold error.
+4. **Kicker-specific field goals.** The engine used nfl4th's 0% make probability from
+   beyond the 53. It still built the "missed field goal" state for 75- to 100-yard
+   attempts, and those states (opponent ball near its own goal line) have no training
+   support. That vetoed 590 otherwise ordinary recommendations, mostly obvious punts.
+   - **The fix:** field goal probability now comes from a kicker-specific model at every
+     distance, with no cutoff (FIELD_GOALS.md). An attempt is offered only if the
+     kicker's make probability is at least `fg_min_make_prob` (default 1%).
+   - **Threshold sweep:**
+
+     | threshold | recommendations | FG recommendations | refused for FG support |
+     |---|---|---|---|
+     | 0 | 2,494 | 858 | 575 |
+     | 0.5% | 2,966 | 858 | 81 |
+     | 1% | 3,003 | 858 | 43 |
+     | 2% | 3,017 | 858 | 29 |
+     | 5% | 3,035 | 856 | 7 |
+
+     The threshold removes hopeless attempts without changing which field goals are
+     recommended.
 
 ## 6. Caveats and what could not be validated
 - **One season.** 285 games, of which 279 have Kalshi pregame lines. Most 4th-down
@@ -202,6 +248,12 @@ extreme prices, and 104 (2.6%) for stale, wide, halted or missing prices.
 - **Out-of-sample scope:** the engine's thresholds (support, price range, refusal window)
   were chosen while looking at this backtest, so the backtest is not fully out-of-sample
   for those choices. The response model itself is.
-- **Fixed components:** the conversion, FG and punt components are nfl4th's, not refit.
-  They don't see in-game changes (backup QB, injured kicker), and team strength is the
-  Kalshi pregame line, fixed for the game.
+- **Components:** the conversion and punt components are nfl4th's, not refit. They don't
+  see in-game changes such as a backup QB, and team strength is the Kalshi pregame line,
+  fixed for the game.
+- **Kicker:** the FG component is the kicker-specific model (FIELD_GOALS.md). A
+  replacement kicker is picked up only once he has kicked in the game. Until then the
+  engine uses the team's usual kicker.
+- **Field goals have no selection correction.** Long attempts are taken in favorable
+  conditions, and the model learns only from attempts teams chose to take. The 2025 make
+  rate from 60+ yards (52% on 23 tries) ran above every model's prediction.

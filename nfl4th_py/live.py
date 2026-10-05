@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import time
+from functools import cache
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +19,25 @@ from nfl4th_py import decision, prep
 from nfl4th_py.market import discovery, pregame
 from nfl4th_py.market.book import posteam_win_price, quote_from_orderbook
 from nfl4th_py.market.client import KalshiClient
+from nfl4th_py.models import kicker
 from nfl4th_py.scrape import espn
+
+PBP_URL = "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_{season}.parquet"
+
+
+def season_kickers(season: int) -> pd.DataFrame:
+    """Each team's kickers by game this season (and last season, for week 1)."""
+    frames = []
+    for s in (season - 1, season):
+        try:
+            pbp = pd.read_parquet(PBP_URL.format(season=s),
+                                  columns=["game_id", "season", "week", "posteam", "play_type", "kicker_player_id"])
+        except Exception:  # the current season's file may not exist yet
+            log.warning("no nflverse play-by-play for %s", s)
+            continue
+        frames.append(pbp[pbp["play_type"].isin(["field_goal", "extra_point"]) & pbp["kicker_player_id"].notna()])
+    return kicker.team_kickers(pd.concat(frames)) if frames else pd.DataFrame(
+        columns=["season", "week", "game_id", "posteam", "kicker_player_id"])
 
 log = logging.getLogger(__name__)
 
@@ -103,13 +122,25 @@ def decision_table(row: pd.Series) -> pd.DataFrame:
     return t
 
 
+def _spot(yl: float) -> str:
+    yl = int(yl)
+    return f"own {100 - yl}" if yl > 50 else ("midfield" if yl == 50 else f"opp {yl}")
+
+
+@cache
+def _kicker_names() -> pd.Series:
+    return kicker.KickerFGModel.load().kickers["name"]
+
+
 def format_decision(row: pd.Series, situation: dict) -> str:
+    kid = row.get("kicker_player_id")
+    kname = _kicker_names().get(kid, "league-average kicker") if isinstance(kid, str) else "league-average kicker"
     head = (
-        f"{situation['posteam']} 4th & {situation['ydstogo']} at {situation['yardline_100']} to go | "
+        f"{situation['posteam']} 4th & {situation['ydstogo']} at {_spot(situation['yardline_100'])} | "
         f"Q{situation['qtr']} {situation['quarter_seconds_remaining']}s | score diff "
         f"{situation['score_differential']:+.0f} | Kalshi win price {row['winner_price']:.3f} "
         f"(bid/ask {row['winner_bid_ask']:.3f}) | pregame spread {row['kalshi_posteam_spread']:+.1f}, "
-        f"total {row['kalshi_total_line']:.1f}"
+        f"total {row['kalshi_total_line']:.1f} | kicker {kname}"
     )
     if row["no_recommendation"]:
         return head + f"\n  NO RECOMMENDATION: {row['no_recommendation_reason']}"
@@ -138,6 +169,11 @@ class LiveSession:
         self.markets = find_game_markets(self.client, self.game, self.schedule[self.schedule["season"] == self.game["season"]])
         if len(self.markets.winner) < 2:
             log.warning("winner markets found: %s", self.markets.winner)
+        try:
+            self.kicker_lookup = season_kickers(int(self.game["season"]))
+        except Exception:
+            log.exception("kicker lookup failed; using the league kicker curve")
+            self.kicker_lookup = None
         self.strength: dict | None = None
         self.strength_frozen = False  # frozen once computed at (past) kickoff
         self.strength_at = 0.0
@@ -164,6 +200,10 @@ class LiveSession:
             "kalshi_spread_quality": s.get("kalshi_spread_quality"), "kalshi_total_quality": s.get("kalshi_total_quality"),
         }])
         play = pd.DataFrame([{k: situation[k] for k in prep.REQUIRED_4TH_COLUMNS}])
+        # the team's kicker: whoever kicked for it today, else its most recent kicker
+        play["kicker_player_id"] = (
+            kicker.kicker_for(self.kicker_lookup, self.game_id, posteam, int(self.game["season"]), int(self.game["week"]))
+            if self.kicker_lookup is not None else None)
         out = decision.add_4th_probs(play, snap, self.games, config=self.config)
         if self.log_dir:
             decision.log_decisions(out, [w["raw"]], self.log_dir)

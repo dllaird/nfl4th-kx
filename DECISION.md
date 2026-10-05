@@ -4,7 +4,8 @@ Entry point: `nfl4th_py.decision.add_4th_probs(df, market_snapshot, games=None, 
 Decisions can be logged with `decision.log_decisions(result, raw_quotes, directory)`.
 
 ## Inputs
-- **`df`**: the nfl4th input columns (see PORTING_NOTES §1.1), plus optional `runoff`.
+- **`df`**: the nfl4th input columns (see PORTING_NOTES §1.1), plus optional `runoff`,
+  `kicker_player_id`, `wind` and `temp`.
 - **`market_snapshot`**: one row per play.
 
   | column | meaning |
@@ -23,7 +24,8 @@ Decisions can be logged with `decision.log_decisions(result, raw_quotes, directo
 ## Calculation
 1. **Outcome probabilities** come from the ported nfl4th components:
    - the conversion model, with strength features from the Kalshi pregame spread/total;
-   - the FG make model (with nfl4th's decay beyond 58 yards);
+   - the kicker-specific FG make model at every distance, with no cutoff (FIELD_GOALS.md;
+     this replaces nfl4th's GAM, which is 0% from the 53 out);
    - the punt outcome table (no punt inside the 31).
 2. **Outcome states**, from the team's view:
 
@@ -72,6 +74,7 @@ Decisions can be logged with `decision.log_decisions(result, raw_quotes, directo
 ## Refusal rules (`DecisionConfig`, all configurable)
 | rule | default | why |
 |---|---|---|
+| FG not offered when the kicker's make probability < fg_min_make_prob | 1% | a hopeless attempt is not an option, so it can neither win nor block a recommendation |
 | winner price outside [min_price, max_price] | [0.03, 0.97] | the response model loses to "no move" there (RESPONSE_MODEL.md) |
 | price older than max_quote_age_s | 30 s | stale |
 | bid/ask wider than max_bid_ask | 0.04 | wide market |
@@ -89,8 +92,8 @@ A refused play gets `recommendation = None`, `no_recommendation = True` and a
 that.
 
 On all 3,997 4th-down plays in 2025 (out-of-sample fold models, final defaults):
-- **recommendations:** punt 934; FG 825; go 685;
-- **refused:** 1,553 (38.9%). Breakdown in VALIDATION.md §2.
+- **recommendations:** punt 1,406; FG 858; go 739;
+- **refused:** 994 (24.9%). Breakdown in VALIDATION.md §2.
 
 ## Anchoring: does conditioning on the pre-play price bias counterfactual values?
 The pre-snap price already reflects the market's expectation of the decision and its

@@ -35,7 +35,8 @@ from scipy.stats import norm
 from nfl4th_py import outcomes, prep
 from nfl4th_py.market import pregame
 from nfl4th_py.market.response import TransitionModel, logit
-from nfl4th_py.models import field_goal, punt
+from nfl4th_py.models import kicker as kicker_mod
+from nfl4th_py.models import punt
 
 MODEL_DIR = Path(__file__).parent / "data" / "response"
 OPTIONS = ("go", "fg", "punt")
@@ -60,6 +61,11 @@ class DecisionConfig:
     # data and the response model misprices them (e.g. "down 1, kicking off, 9 s left");
     # the support measure does not catch this because it treats 20 s and 120 s as close
     q4_refuse_last_seconds: float = 120.0
+    # field goals: make probability comes from the kicker-specific model at every
+    # distance (no hard cutoff). An attempt below this make probability is not offered as
+    # an option, so it can neither be recommended nor block a recommendation.
+    fg_min_make_prob: float = 0.01
+    kick_distance_offset: float = 17.0  # kick distance = yardline_100 + 17 (snap 7 yd back + end zone)
     # game seconds used until the next snap, by outcome: medians measured on 2025 plays
     # (DECISION.md). nfl4th uses 6 s for everything, which misprices conversions, after
     # which the clock usually keeps running (~38 s).
@@ -74,6 +80,25 @@ class DecisionConfig:
 @cache
 def response_model() -> TransitionModel:
     return TransitionModel.load(MODEL_DIR)
+
+
+@cache
+def kicker_model() -> kicker_mod.KickerFGModel:
+    return kicker_mod.KickerFGModel.load()
+
+
+def fg_make_probability(prepared: pd.DataFrame, km: kicker_mod.KickerFGModel, cfg: DecisionConfig) -> np.ndarray:
+    """Kicker-specific make probability for an attempt from the line of scrimmage.
+    Uses `kicker_player_id`, `wind` and `temp` when present; otherwise the league
+    kicker in neutral weather."""
+    def col(name, default):
+        return prepared[name].to_numpy() if name in prepared else np.full(len(prepared), default)
+    kid = prepared["kicker_player_id"].where(prepared["kicker_player_id"].notna(), None).to_numpy(dtype=object)         if "kicker_player_id" in prepared else None
+    return km.predict(
+        prepared["yardline_100"].to_numpy(float) + cfg.kick_distance_offset, kid,
+        outdoors=prepared["outdoors"].to_numpy(float), season=prepared["season"].to_numpy(float),
+        wind=col("wind", 0.0).astype(float), temp=col("temp", np.nan).astype(float),
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -172,13 +197,14 @@ def go_states(prepared: pd.DataFrame) -> pd.DataFrame:
     return p
 
 
-def fg_states(prepared: pd.DataFrame) -> pd.DataFrame:
-    base = prepared.reset_index(drop=True)
-    pm = field_goal.make_prob(base)
+def fg_states(prepared: pd.DataFrame, make_prob: np.ndarray, eligible: np.ndarray) -> pd.DataFrame:
+    """Make/miss states for plays where the attempt is offered (`eligible`)."""
+    base = prepared.reset_index(drop=True).loc[eligible]
+    pm = make_prob[eligible]
     rows = []
     for outcome, prob in (("make", pm), ("miss", 1 - pm)):
         o = base.copy()
-        o["play"] = np.arange(len(base))
+        o["play"] = base.index.to_numpy()
         o["half_seconds_remaining"] = np.maximum(o["half_seconds_remaining"] - 6, 0)
         o["game_seconds_remaining"] = np.maximum(o["game_seconds_remaining"] - 6, 0)
         o["posteam_timeouts_remaining_orig"] = o["posteam_timeouts_remaining"]
@@ -192,6 +218,7 @@ def fg_states(prepared: pd.DataFrame) -> pd.DataFrame:
             o["score_differential"] = -o["score_differential"]
             o["yardline_100"] = np.clip((100 - base["yardline_100"]) - 8, 1, 80)
             o["ydstogo"] = np.where(o["yardline_100"] < 10, o["yardline_100"], 10)
+        o = o.reset_index(drop=True)
         p = _team_view(o)
         if outcome == "make":
             _set_kind(p, np.ones(len(p), bool), "kickoff", np.zeros(len(p), bool), 35.0)
@@ -356,10 +383,13 @@ def add_4th_probs(
     config: DecisionConfig = DecisionConfig(),
     model: TransitionModel | None = None,
     return_outcomes: bool = False,
+    fg_model: kicker_mod.KickerFGModel | None = None,
 ) -> pd.DataFrame | tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
     """nfl4th's add_4th_probs() valued with Kalshi markets.
 
-    `df`: nfl4th Path A input columns (see prep.REQUIRED_4TH_COLUMNS), optional `runoff`.
+    `df`: nfl4th Path A input columns (see prep.REQUIRED_4TH_COLUMNS), optional `runoff`,
+    and optional `kicker_player_id` (nflverse GSIS id), `wind` (mph) and `temp` (F) for
+    the kicker-specific FG model.
     `market_snapshot`: one row per row of `df` with SNAPSHOT_COLUMNS.
     `games`: prep.build_games() schedule table (roof etc.); loaded from nflverse if None.
     Pregame betting lines in `games` are replaced by the Kalshi values in the snapshot.
@@ -376,6 +406,7 @@ def add_4th_probs(
     if len(market_snapshot) != len(df):
         raise ValueError("market_snapshot must have one row per play")
     model = model or response_model()
+    km = fg_model or kicker_model()
     data = df.reset_index(drop=True).copy()
     snap = market_snapshot.reset_index(drop=True).copy()
     for c in SNAPSHOT_COLUMNS:
@@ -409,7 +440,12 @@ def add_4th_probs(
         sub = prepared.loc[ok].reset_index(drop=True)
         idx = np.flatnonzero(ok)
         pre = _pre_columns(sub, snap.loc[ok, "price"].to_numpy(float))
-        for option, builder in (("go", go_states), ("fg", fg_states), ("punt", punt_states)):
+        fg_p = fg_make_probability(sub, km, config)
+        fg_ok = fg_p >= config.fg_min_make_prob
+        res.loc[idx, "fg_make_prob"] = fg_p
+        res.loc[idx, "fg_offered"] = fg_ok
+        builders = (("go", go_states), ("fg", lambda x: fg_states(x, fg_p, fg_ok)), ("punt", punt_states))
+        for option, builder in builders:
             states = builder(sub)
             if states.empty:  # e.g. no punt rows inside the 31
                 continue
@@ -426,8 +462,7 @@ def add_4th_probs(
         res["wp_succeed"] = conv.assign(pw=conv["prob"] * conv["price"]).groupby("play")["pw"].sum() / res["first_down_prob"]
         fail_p = fail.groupby("play")["prob"].sum()
         res["wp_fail"] = fail.assign(pw=fail["prob"] * fail["price"]).groupby("play")["pw"].sum() / fail_p
-        fg = valued["fg"]
-        res["fg_make_prob"] = fg[fg["outcome"] == "make"].set_index("play")["prob"]
+        fg = valued.get("fg", pd.DataFrame(columns=["outcome", "play", "price"]))
         res["make_fg_wp"] = fg[fg["outcome"] == "make"].set_index("play")["price"]
         res["miss_fg_wp"] = fg[fg["outcome"] == "miss"].set_index("play")["price"]
         res["td_wp"] = go[go["outcome"] == "td"].groupby("play")["price"].mean()

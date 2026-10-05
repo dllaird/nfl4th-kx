@@ -13,8 +13,8 @@ nfl4th's outcome probabilities and values each outcome with a model of how the K
 game-winner market reprices after plays:
 
 - **Outcome probabilities** come from nfl4th's components, ported to Python and checked
-  against R. These are the conversion model, the field goal model and the punt outcome
-  table. Team strength comes from the Kalshi spread and total markets just before
+  against R: the conversion model and the punt outcome table. Field goals use a
+  kicker-specific make-probability model with no distance cutoff. Team strength comes from the Kalshi spread and total markets just before
   kickoff, instead of the betting line.
 - **Outcome values** come from a market-response model. It predicts the winner-market
   price once the market has settled after a play, from the price before the snap and the
@@ -32,7 +32,8 @@ game-winner market reprices after plays:
 | Python port of nfl4th | Matches R on 2,180 fourth downs: probabilities and win probabilities within 2e-7, the same recommendation on every play |
 | Kalshi data | All 285 games of the 2025 season: winner, spread and total markets. Trade tape and 1-minute candles, via the public API |
 | Market-response model | Average error of 1.1 cents on post-play prices, vs 1.5 for nfl4th's win-probability models anchored to the same price (out-of-sample) |
-| Decision engine | Out-of-sample backtest on 3,997 2025 fourth downs. Agrees with nfl4th on 78% of the plays it recommends on |
+| Field goals | Kicker-specific model, out-of-sample on 2025 field goals: log loss 0.360 vs 0.365 for nfl4th's model |
+| Decision engine | Out-of-sample backtest on 3,997 2025 fourth downs. Recommends on 3,003 and agrees with nfl4th on 80% of those |
 | Live mode | `nfl4th-py live`, tested against live Kalshi orderbooks but not yet during a game |
 
 Details:
@@ -45,6 +46,7 @@ Details:
 | [DATASET.md](DATASET.md), [DATA_DICTIONARY.md](DATA_DICTIONARY.md) | The plays-to-prices training dataset |
 | [RESPONSE_MODEL.md](RESPONSE_MODEL.md) | The market-response model and how it was validated |
 | [DECISION.md](DECISION.md) | The decision engine, its refusal rules and anchoring |
+| [FIELD_GOALS.md](FIELD_GOALS.md) | The kicker-specific field goal model |
 | [VALIDATION.md](VALIDATION.md) | Backtest, sensitivity, market usability and caveats |
 
 ## Installation
@@ -107,6 +109,7 @@ git-ignored. The scripts recreate them in this order:
 | Step | Script |
 |---|---|
 | Export nfl4th and nflfastR models from R | `scripts/export_from_r.R` |
+| Export 2014–2025 kicks and fit the kicker model | `scripts/export_kicks.R`, `scripts/train_kicker.py` |
 | Build R parity fixtures | `scripts/make_fixtures.R` |
 | Download 2025 Kalshi trades and candles (about 1.5 hours) | `scripts/backfill_kalshi.py` |
 | Align plays to prices | `scripts/build_dataset.py` |
@@ -125,9 +128,10 @@ Tests: `python -m pytest`.
 - **Some plays get no recommendation.** The engine refuses when prices are below 3% or
   above 97%, in the final 2 minutes of regulation, in overtime, or when outcome states
   are outside the model's training data.
-- **No in-game adjustments to outcome probabilities.** The conversion, field goal and
-  punt components don't account for changes such as a backup QB, an injured kicker or
-  weather. Kalshi prices reflect those changes, so outcome *values* do too, but outcome
+- **No in-game adjustments to outcome probabilities.** The conversion and punt
+  components don't account for changes such as a backup QB. The field goal model knows
+  the kicker and the game's weather, but picks up a replacement kicker only after his
+  first kick of the game. Kalshi prices reflect those changes, so outcome *values* do too, but outcome
   *probabilities* don't. Team strength is the Kalshi pregame line, fixed for the game.
 
 ## The original R package
