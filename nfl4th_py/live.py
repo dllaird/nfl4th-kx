@@ -149,6 +149,8 @@ def format_decision(row: pd.Series, situation: dict) -> str:
         f"  RECOMMEND: {row['recommendation'].upper()} by {100 * row['ev_gap']:.1f} pts "
         f"(+-{100 * row['ev_gap_sd']:.1f}; P(best) {row['prob_best_option_is_best']:.2f})"
     )
+    if isinstance(row.get("cautions"), str):
+        rec += f"\n  CAUTION: {row['cautions']}"
     return f"{head}\n{table}\n{rec}"
 
 
@@ -198,6 +200,8 @@ class LiveSession:
             "n_trades": w["n_trades"], "halted": w["halted"],
             "kalshi_spread_line": s.get("kalshi_spread_line"), "kalshi_total_line": s.get("kalshi_total_line"),
             "kalshi_spread_quality": s.get("kalshi_spread_quality"), "kalshi_total_quality": s.get("kalshi_total_quality"),
+            "kalshi_spread_source": s.get("kalshi_spread_source", "ladder"),
+            "kalshi_total_source": s.get("kalshi_total_source", "ladder"),
         }])
         play = pd.DataFrame([{k: situation[k] for k in prep.REQUIRED_4TH_COLUMNS}])
         # the team's kicker: whoever kicked for it today, else its most recent kicker
