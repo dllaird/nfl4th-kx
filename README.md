@@ -32,6 +32,11 @@ and punt components are ported faithfully from this package and match it to with
 on a 2,180-play fixture set (`tests/`). See `PORTING_NOTES.md`, `KALSHI_NOTES.md` and
 `DATA_FEASIBILITY.md`.
 
+**Known limitation:** the conversion, FG and punt components don't adjust for in-game
+changes such as a backup QB, an injured kicker or weather. Kalshi prices reflect those
+changes, so the market-implied values of outcomes do too, but the outcome probabilities
+don't. Team strength is the Kalshi pregame spread and total, held fixed for the game.
+
 All credit for nfl4th and its models goes to Ben Baldwin and the nflverse contributors
 (nfl4th, nflfastR, fastrmodels), whose work is used here under the MIT license.
 

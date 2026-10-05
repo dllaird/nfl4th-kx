@@ -30,8 +30,9 @@ def main() -> None:
     t = o.assign(ae=r.abs()).groupby("support_decile").agg(
         support_min=("support_transition", "min"), mae_logit=("ae", "mean"), n=("ae", "size"))
     print("\nerror by support decile\n", t.round(3).to_string())
-    print("support < 0.5 share:", round(float((o["support_transition"] < 0.5).mean()), 4),
-          " MAE there:", round(float(r.abs()[o["support_transition"] < 0.5].mean()), 3))
+    bands = pd.cut(o["support_transition"], [-0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 1.0])
+    print("\nerror by support band (percentile)\n",
+          o.assign(ae=r.abs()).groupby(bands, observed=True)["ae"].agg(["mean", "size"]).round(3).to_string())
 
     p = expit(o["pred_transition"])
     bins = pd.cut(p, [0, .05, .1, .2, .3, .4, .5, .6, .7, .8, .9, .95, 1])

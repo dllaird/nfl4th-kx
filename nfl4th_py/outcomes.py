@@ -16,11 +16,17 @@ from nfl4th_py import states
 from nfl4th_py.models import conversion, field_goal, punt
 
 
-def go_outcomes(prepared: pd.DataFrame, gain_probs: np.ndarray | None = None) -> pd.DataFrame:
+def go_outcomes(
+    prepared: pd.DataFrame, gain_probs: np.ndarray | None = None, r_quirks: bool = True
+) -> pd.DataFrame:
     """One row per (play, distinct resulting yardline) for going for it.
 
     Columns added: `prob`, `gain`, `turnover` (failed attempt), `td` (yardline 0).
     A row with `turnover == 1 and td` is the opponent scoring on a backed-up loss.
+
+    `r_quirks=True` reproduces nfl4th's clock handling exactly (runoff never applied, see
+    below); `r_quirks=False` applies `runoff` to converted non-TD outcomes and floors each
+    outcome's clock at 0, as intended.
     """
     if gain_probs is None:
         gain_probs = conversion.gain_probs(prepared)
@@ -59,7 +65,10 @@ def go_outcomes(prepared: pd.DataFrame, gain_probs: np.ndarray | None = None) ->
         # R quirk: `max(x, 0)` inside a grouped mutate returns one scalar per play,
         # max(all outcomes' clocks, 0), so every outcome gets the largest clock
         # (pre-play - 6, floored at 0). `runoff` is therefore never applied.
-        out[col] = np.maximum(secs.groupby(out["play"]).transform("max"), 0)
+        if r_quirks:
+            out[col] = np.maximum(secs.groupby(out["play"]).transform("max"), 0)
+        else:
+            out[col] = np.maximum(secs, 0)
     out["ydstogo"] = np.where(out["yardline_100"] < 10, out["yardline_100"], 10)
     return out
 

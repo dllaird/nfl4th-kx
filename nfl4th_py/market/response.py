@@ -156,24 +156,26 @@ DEFAULT_PARAMS = {
 
 @dataclass
 class Support:
-    """Training-data support: distance to the k nearest training transitions in a
-    standardized key-feature space. Larger distance = less support."""
+    """Training-data support: the mean distance to the k nearest training transitions in
+    a standardized key-feature space, expressed as a percentile of the same distance
+    for training transitions themselves. score = share of training transitions that are
+    *less* typical (farther from their neighbors) than this point: 0.5 = a typical
+    training point, 0.02 = more isolated than 98% of the training data."""
 
     columns: list[str]
     mean: np.ndarray
     scale: np.ndarray
     tree: cKDTree
     k: int = 25
-    ref_distance: float = 1.0  # median kNN distance on training data
+    ref_quantiles: np.ndarray = field(default_factory=lambda: np.array([0.0, 1.0]))
 
     @classmethod
     def fit(cls, x: pd.DataFrame, columns: list[str], k: int = 25) -> Support:
         z = x[columns].to_numpy(float)
         mean, scale = np.nanmean(z, 0), np.nanstd(z, 0) + 1e-9
         zz = np.nan_to_num((z - mean) / scale)
-        tree = cKDTree(zz)
-        sup = cls(columns, mean, scale, tree, k)
-        sup.ref_distance = float(np.median(sup._dist(x, exclude_self=True)))
+        sup = cls(columns, mean, scale, cKDTree(zz), k)
+        sup.ref_quantiles = np.quantile(sup._dist(x, exclude_self=True), np.linspace(0, 1, 1001))
         return sup
 
     def _dist(self, x: pd.DataFrame, exclude_self: bool = False) -> np.ndarray:
@@ -183,8 +185,8 @@ class Support:
         return d[:, 1:].mean(1) if exclude_self else d.mean(1)
 
     def score(self, x: pd.DataFrame) -> np.ndarray:
-        """1 = as well supported as a typical training point; -> 0 far outside."""
-        return np.exp(-np.maximum(self._dist(x) / self.ref_distance - 1, 0))
+        q = np.searchsorted(self.ref_quantiles, self._dist(x), side="left") / (len(self.ref_quantiles) - 1)
+        return 1 - np.clip(q, 0, 1)
 
 
 SUPPORT_COLUMNS = [
@@ -238,7 +240,7 @@ class TransitionModel:
         np.savez(
             directory / "transition_support.npz",
             data=self.support.tree.data, mean=self.support.mean, scale=self.support.scale,
-            k=self.support.k, ref=self.support.ref_distance,
+            k=self.support.k, ref_quantiles=self.support.ref_quantiles,
         )
         (directory / "transition_meta.json").write_text(
             json.dumps({"features": TRANSITION_FEATURES, "support_columns": SUPPORT_COLUMNS,
@@ -259,7 +261,7 @@ class TransitionModel:
         m.sd_booster.load_model(directory / "transition_sd.json")
         s = np.load(directory / "transition_support.npz")
         m.sd_scale = float(meta.get("sd_scale", 1.0))
-        m.support = Support(meta["support_columns"], s["mean"], s["scale"], cKDTree(s["data"]), int(s["k"]), float(s["ref"]))
+        m.support = Support(meta["support_columns"], s["mean"], s["scale"], cKDTree(s["data"]), int(s["k"]), s["ref_quantiles"])
         return m
 
 
