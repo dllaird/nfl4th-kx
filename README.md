@@ -1,101 +1,152 @@
+<!-- nfl4th-kx keeps this README by hand. README.Rmd documents the original R package. -->
 
-<!-- README.md is generated from README.Rmd. Please edit that file -->
+# nfl4th-kx
 
-# **nfl4th** <img src="man/figures/logo.png" align="right" width="25%" min-width="120px"/>
+nfl4th-kx is a fork of [nfl4th](https://github.com/nflverse/nfl4th), the R package behind
+the [fourth down calculator](https://rbsdm.com/stats/fourth_calculator/). It adds
+`nfl4th_py`, a Python package that recommends 4th-down decisions using
+[Kalshi](https://kalshi.com) prediction-market prices instead of a win-probability model.
 
-<!-- badges: start -->
+nfl4th compares the win probability of going for it, kicking a field goal and punting,
+and values every possible outcome with a win-probability model. nfl4th-kx keeps
+nfl4th's outcome probabilities and values each outcome with a model of how the Kalshi
+game-winner market reprices after plays:
 
-[![R-CMD-check](https://github.com/nflverse/nfl4th/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/nflverse/nfl4th/actions/workflows/R-CMD-check.yaml)
-[![CRAN
-status](https://www.r-pkg.org/badges/version-last-release/nfl4th)](https://CRAN.R-project.org/package=nfl4th)
-[![Lifecycle:
-stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html#stable)
-[![Support
-Server](https://img.shields.io/discord/789805604076126219.svg?color=7289da&label=Support&logo=discord&style=flat-square)](https://discord.com/invite/5Er2FBnnQa)
-<!-- badges: end -->
+- **Outcome probabilities** come from nfl4th's components, ported to Python and checked
+  against R. These are the conversion model, the field goal model and the punt outcome
+  table. Team strength comes from the Kalshi spread and total markets just before
+  kickoff, instead of the betting line.
+- **Outcome values** come from a market-response model. It predicts the winner-market
+  price once the market has settled after a play, from the price before the snap and the
+  change in game state. It is trained on every play of the 2025 season, aligned to
+  Kalshi trades.
+- **The decision** is the option with the highest expected post-play price. It comes
+  with the gap to the next option and its uncertainty. When the market or the model
+  isn't reliable enough, the engine gives no recommendation and says why. It never falls
+  back to a win-probability model.
 
-This is the package that powers the [fourth down
-calculator](https://rbsdm.com/stats/fourth_calculator/) introduced in
-[this piece on The
-Athletic](https://www.nytimes.com/athletic/2144214/2020/10/28/nfl-fourth-down-decisions-the-math-behind-the-leagues-new-aggressiveness/).
+## Status
 
-The code that powers the Twitter fourth down bot [is in this folder
-here](https://github.com/guga31bb/fourth_calculator/tree/main/bot) and
-the [code that runs the Shiny app is
-here](https://github.com/guga31bb/fourth_calculator/blob/main/app.R).
+| Part | State |
+|---|---|
+| Python port of nfl4th | Matches R on 2,180 fourth downs: probabilities and win probabilities within 2e-7, the same recommendation on every play |
+| Kalshi data | All 285 games of the 2025 season: winner, spread and total markets. Trade tape and 1-minute candles, via the public API |
+| Market-response model | Average error of 1.1 cents on post-play prices, vs 1.5 for nfl4th's win-probability models anchored to the same price (out-of-sample) |
+| Decision engine | Out-of-sample backtest on 3,997 2025 fourth downs. Agrees with nfl4th on 78% of the plays it recommends on |
+| Live mode | `nfl4th-py live`, tested against live Kalshi orderbooks but not yet during a game |
 
-## Python port (`nfl4th_py`) — work in progress
+Details:
 
-This fork adds `nfl4th_py`, a Python port of nfl4th that will value 4th-down options
-with Kalshi market prices instead of a win probability model. The conversion, field goal
-and punt components are ported faithfully from this package and match it to within 1e-6
-on a 2,180-play fixture set (`tests/`). See `PORTING_NOTES.md`, `KALSHI_NOTES.md` and
-`DATA_FEASIBILITY.md`.
-
-**Known limitation:** the conversion, FG and punt components don't adjust for in-game
-changes such as a backup QB, an injured kicker or weather. Kalshi prices reflect those
-changes, so the market-implied values of outcomes do too, but the outcome probabilities
-don't. Team strength is the Kalshi pregame spread and total, held fixed for the game.
-
-All credit for nfl4th and its models goes to Ben Baldwin and the nflverse contributors
-(nfl4th, nflfastR, fastrmodels), whose work is used here under the MIT license.
+| Document | What it covers |
+|---|---|
+| [PORTING_NOTES.md](PORTING_NOTES.md) | How nfl4th works and how it was ported, including R quirks reproduced for parity |
+| [KALSHI_NOTES.md](KALSHI_NOTES.md) | The Kalshi API, NFL market structure and settlement rules |
+| [DATA_FEASIBILITY.md](DATA_FEASIBILITY.md) | Play timestamps, data volume and scope decisions |
+| [DATASET.md](DATASET.md), [DATA_DICTIONARY.md](DATA_DICTIONARY.md) | The plays-to-prices training dataset |
+| [RESPONSE_MODEL.md](RESPONSE_MODEL.md) | The market-response model and how it was validated |
+| [DECISION.md](DECISION.md) | The decision engine, its refusal rules and anchoring |
+| [VALIDATION.md](VALIDATION.md) | Backtest, sensitivity, market usability and caveats |
 
 ## Installation
 
-The easiest way to get the released version of nfl4th is to install it
-from [CRAN](https://cran.r-project.org/package=nfl4th) with:
+Python 3.11 or later:
+
+``` sh
+python -m venv .venv
+.venv/Scripts/python -m pip install -e ".[dev]"   # on macOS/Linux: .venv/bin/python
+```
+
+All Kalshi access is read-only and uses public market-data endpoints, so no API key is
+needed. The package contains no order-placement code.
+
+## Usage
+
+Run the engine on fourth downs. `df` has the same columns as nfl4th's `add_4th_probs()`,
+and `snapshot` has one row of market data per play:
+
+``` python
+import pandas as pd
+from nfl4th_py import decision
+
+play = pd.DataFrame([dict(
+    home_team="NO", away_team="ATL", posteam="NO", type="reg", season=2026,
+    qtr=3, quarter_seconds_remaining=420, ydstogo=2, yardline_100=38,
+    score_differential=-3, home_opening_kickoff=1,
+    posteam_timeouts_remaining=2, defteam_timeouts_remaining=3,
+)])
+snapshot = pd.DataFrame([dict(
+    price=0.45, bid_ask=0.01, quote_age_s=2, n_trades=10, halted=False,   # winner market, posteam view
+    kalshi_spread_line=0.9, kalshi_total_line=47.8,                       # Kalshi pregame lines
+    kalshi_spread_quality=0.6, kalshi_total_quality=0.9,
+)])
+out = decision.add_4th_probs(play, snapshot)
+out[["go_ev", "fg_ev", "punt_ev", "recommendation", "ev_gap", "no_recommendation_reason"]]
+```
+
+Follow a live game. It prints a decision table at each 4th down and logs every decision
+to parquet:
+
+``` sh
+nfl4th-py live --game 2026_04_ATL_NO
+```
+
+Run the original nfl4th calculation in Python (benchmark only; the decision engine never
+uses it):
+
+``` python
+from nfl4th_py import prep
+from nfl4th_py.models.wp_baseline import add_4th_probs_baseline
+add_4th_probs_baseline(play, prep.load_games())
+```
+
+## Rebuilding the data and models
+
+The Kalshi data and the dataset built from it live in `data_cache/`, which is
+git-ignored. The scripts recreate them in this order:
+
+| Step | Script |
+|---|---|
+| Export nfl4th and nflfastR models from R | `scripts/export_from_r.R` |
+| Build R parity fixtures | `scripts/make_fixtures.R` |
+| Download 2025 Kalshi trades and candles (about 1.5 hours) | `scripts/backfill_kalshi.py` |
+| Align plays to prices | `scripts/build_dataset.py` |
+| Measure market reaction lag | `scripts/reaction_lag.py` |
+| Train and validate the response model | `scripts/train_response.py`, `scripts/analyze_response.py` |
+| Run the decision backtest | `scripts/backtest.py` |
+
+Tests: `python -m pytest`.
+
+## Known limitations
+
+- **One season of data.** Kalshi NFL game markets start in 2025. Most 4th-down
+  comparisons are not statistically significant on the late-season holdout.
+- **Conversions are undervalued by about half a point.** The response model undervalues
+  successful 4th-down conversions, so the engine leans slightly against going for it.
+- **Some plays get no recommendation.** The engine refuses when prices are below 3% or
+  above 97%, in the final 2 minutes of regulation, in overtime, or when outcome states
+  are outside the model's training data.
+- **No in-game adjustments to outcome probabilities.** The conversion, field goal and
+  punt components don't account for changes such as a backup QB, an injured kicker or
+  weather. Kalshi prices reflect those changes, so outcome *values* do too, but outcome
+  *probabilities* don't. Team strength is the Kalshi pregame line, fixed for the game.
+
+## The original R package
+
+The R package is unchanged and still lives here (`R/`, `tests/testthat/`). For nfl4th
+itself, see [nfl4th.com](https://www.nfl4th.com/) and the
+[upstream repository](https://github.com/nflverse/nfl4th):
 
 ``` r
 install.packages("nfl4th")
 ```
 
-To get a bug fix or to use a feature from the development version, you
-can install the development version of nfl4th from
-[GitHub](https://github.com/nflverse/nfl4th/) with:
+## Credits and license
 
-``` r
-install.packages("nfl4th", repos = c("https://nflverse.r-universe.dev", getOption("repos")))
-```
+nfl4th is by Ben Baldwin, with contributions from Sebastian Carl and the nflverse
+contributors. nfl4th-kx also uses models and data from
+[nflfastR](https://www.nflfastr.com/), fastrmodels and
+[nflverse](https://github.com/nflverse). All are used under the MIT license, which this
+fork keeps (see [LICENSE.md](LICENSE.md)).
 
-or by using remotes:
-
-``` r
-if (!require("pak")) install.packages("pak")
-pak::pak("nflverse/nfl4th")
-```
-
-## Features
-
-- The **go for it** model gives probabilities for possibilities of yards
-  gained and includes the possibility of earning a first down via
-  defensive penalty
-- The **punt** model includes the possibility for getting blocked,
-  returned for a touchdown, or fumbled on the return
-- The **field goal** model is a simple model of field goal % by distance
-  and roof type
-
-## Current limitations
-
-There are some edge cases that are not accounted for. These should only
-make a marginal difference to the recommendations as they are largely
-edge cases (e.g. the possibility for a field goal to be blocked and
-returned).
-
-- The **go for it** model does not allow for the possibility of a
-  turnover return. However, long returns are extremely rare: For
-  example, in 2018 and 2019 there were only four defensive touchdowns on
-  plays where teams went for fourth downs out of 1,236 plays, and all of
-  these happened when the game was well in hand for the other team.
-- The **punt** model doesn’t account for the punter or returner, ignores
-  penalties on returns and ignores the potential for blocked punts to be
-  returned for touchdowns
-- The **field goal** model doesn’t account for who the kicker is, what
-  the weather is (only relevant for outdoor games), or the possibility
-  of a kick being blocked and returned for a touchdown
-
-## Get Started
-
-To get started with nfl4th please see [this
-article](https://www.nfl4th.com/articles/articles/nfl4th.html). Some
-examples of 4th down research using the package [can be found
-here](https://www.nfl4th.com/articles/articles/4th-down-research.html).
+Kalshi market data is read from Kalshi's public API and is not redistributed in this
+repository.

@@ -65,3 +65,4 @@ reports/response_holdout.parquet
 decisions/
 reports/backtest_plays.parquet
 reports/backtest_disagreements.parquet
+reports/viz_data.json
