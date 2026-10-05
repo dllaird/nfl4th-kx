@@ -64,13 +64,11 @@ def test_recommends_with_ev_and_uncertainty(games):
 @pytest.mark.parametrize(
     "snap_kw, reason",
     [
-        ({"price": 0.99}, "outside"),
         ({"price": np.nan}, "no winner-market price"),
         ({"quote_age_s": 300}, "stale"),
         ({"bid_ask": 0.2}, "wider"),
-        ({"halted": True}, "halted"),
-        ({"kalshi_spread_line": np.nan}, "spread ladder"),
-        ({"kalshi_total_quality": 0.0}, "total ladder"),
+        ({"kalshi_spread_line": np.nan}, "no Kalshi pregame spread"),
+        ({"kalshi_total_line": np.nan}, "no Kalshi pregame total"),
     ],
 )
 def test_refuses_unusable_markets(games, snap_kw, reason):
@@ -78,6 +76,30 @@ def test_refuses_unusable_markets(games, snap_kw, reason):
     assert out.loc[0, "no_recommendation"]
     assert reason in out.loc[0, "no_recommendation_reason"]
     assert pd.isna(out.loc[0, "go_ev"])  # nothing is valued: no fallback
+
+
+@pytest.mark.parametrize(
+    "play_kw, snap_kw, caution",
+    [
+        ({"score_differential": 21}, {"price": 0.99}, "tick limit"),
+        ({"score_differential": -21}, {"price": 0.015}, "tick limit"),
+        ({}, {"quote_age_s": 60}, "s old"),
+        ({}, {"bid_ask": 0.06}, "wider than 0.04"),
+        ({}, {"halted": True}, "no recent trade"),
+        ({}, {"kalshi_total_quality": 0.05}, "fit is weak"),
+        ({}, {"kalshi_spread_source": "winner_price"}, "fallback"),
+    ],
+)
+def test_marginal_markets_recommend_with_caution(games, play_kw, snap_kw, caution):
+    out = run([_play(**play_kw)], [_snap(**snap_kw)], games)
+    assert out.loc[0, "recommendation"] in decision.OPTIONS
+    assert out.loc[0, "confidence"] == "caution"
+    assert caution in out.loc[0, "cautions"]
+
+
+def test_clean_market_has_normal_confidence(games):
+    out = run([_play()], [_snap()], games)
+    assert out.loc[0, "confidence"] == "normal" and out.loc[0, "cautions"] is None
 
 
 def test_support_threshold_refuses(games):
@@ -108,14 +130,34 @@ def test_no_punt_inside_31(games):
     assert pd.isna(out.loc[0, "punt_ev"])
 
 
-def test_end_of_regulation_refused(games):
+def test_end_of_regulation_is_recommended(games):
     out = run([_play(quarter_seconds_remaining=60)], [_snap()], games)
-    assert "regulation" in out.loc[0, "no_recommendation_reason"]
+    assert out.loc[0, "recommendation"] in decision.OPTIONS
+    off = run([_play(quarter_seconds_remaining=60)], [_snap()], games, q4_refuse_last_seconds=120)
+    assert "regulation" in off.loc[0, "no_recommendation_reason"]
 
 
-def test_ot_refused(games):
-    out = run([_play(qtr=5)], [_snap()], games)
-    assert "overtime" in out.loc[0, "no_recommendation_reason"]
+def test_trailing_team_keeps_time_after_late_conversion(games):
+    # down 4 with 13 s left: a conversion must not run the clock out on the trailing team
+    _, a = run([_play(quarter_seconds_remaining=13, score_differential=-4, posteam_timeouts_remaining=0)], [_snap(price=0.1)], games, True)
+    conv = a["go"][a["go"].outcome == "convert"]
+    assert (conv["post_game_seconds_remaining"] >= 3).all()
+
+
+def test_kneel_out_states_use_market_level(games):
+    # a FG that leaves the kicking team down 1 with ~10 s and no timeouts: the receiver kneels
+    _, a = run([_play(quarter_seconds_remaining=14, score_differential=-4, posteam_timeouts_remaining=0, yardline_100=20)],
+               [_snap(price=0.1)], games, True)
+    make = a["fg"][a["fg"].outcome == "make"].iloc[0]
+    assert make["kneel_out"] and make["price"] <= 0.01 + 1e-9
+
+
+def test_overtime_supported_with_caution(games):
+    out = run([_play(qtr=5, quarter_seconds_remaining=400, score_differential=0)], [_snap(price=0.5)], games)
+    assert out.loc[0, "recommendation"] in decision.OPTIONS
+    assert "overtime" in out.loc[0, "cautions"]
+    off = run([_play(qtr=5)], [_snap()], games, max_qtr=4)
+    assert "overtime" in off.loc[0, "no_recommendation_reason"]
 
 
 def _convert_clock(out):

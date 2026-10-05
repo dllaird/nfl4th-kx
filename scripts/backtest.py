@@ -100,7 +100,7 @@ def main() -> None:
         f[f"engine_{o}_sd"] = eng[f"{o}_sd"]
         f[f"nfl4th_{o}_wp"] = orig[f"{o}_wp"]
     for c in ("ev_gap", "ev_gap_sd", "prob_best_option_is_best", "no_recommendation_reason", "go_boost",
-              "first_down_prob", "fg_make_prob", "fg_offered"):
+              "first_down_prob", "fg_make_prob", "fg_offered", "confidence", "cautions"):
         f[f"engine_{c}"] = eng[c]
     f["nfl4th_go_boost"] = orig["go_boost"]
 
@@ -110,6 +110,8 @@ def main() -> None:
     reasons = f.loc[~rec, "engine_no_recommendation_reason"].str.split("; ").explode()
     summary["refusal_reasons"] = reasons.str.replace(r"^(go|fg|punt): ", "", regex=True).value_counts().to_dict()
     summary["nfl4th_recommendations"] = f["nfl4th_rec"].value_counts().to_dict()
+    summary["confidence"] = f["engine_confidence"].value_counts().to_dict()
+    summary["caution_reasons"] = f["engine_cautions"].dropna().str.split("; ").explode().value_counts().to_dict()
 
     r = f[rec].copy()
     summary["agreement_engine_vs_nfl4th"] = float((r["engine_rec"] == r["nfl4th_rec"]).mean())
@@ -152,6 +154,12 @@ def main() -> None:
             to = t[t["actual"] == o]
             cal[name][f"{o}_mean_post_minus_ev_pts"] = float(100 * (to["post_price"] - to[col]).mean())
             cal[name][f"{o}_n"] = int(len(to))
+    # by confidence level (all prices, plays the engine recommended)
+    tc = took[took["engine_ev_actual"].notna() & took["engine_confidence"].notna()]
+    for lvl, g_ in tc.groupby("engine_confidence"):
+        res_ = g_["post_price"] - g_["engine_ev_actual"]
+        cal[f"engine_{lvl}"] = {"n": int(len(g_)), "mean_post_minus_ev_pts": float(100 * res_.mean()),
+                                "mae_pts": float(100 * res_.abs().mean())}
     t = took[took["pre_price"].between(0.03, 0.97)]
     cal["market_mean_post_minus_pre_pts"] = float(100 * (t["post_price"] - t["pre_price"]).mean())
     summary["ev_calibration_vs_settled_price"] = cal

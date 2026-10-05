@@ -44,23 +44,34 @@ OPTIONS = ("go", "fg", "punt")
 
 @dataclass(frozen=True)
 class DecisionConfig:
-    min_price: float = 0.03  # outside [min, max] the response model loses to "no move"
-    max_price: float = 0.97
-    max_quote_age_s: float = 30.0  # winner-market price must be this fresh
-    max_bid_ask: float = 0.04  # winner-market bid/ask width
+    # Hard limits refuse a recommendation; caution limits still recommend but flag it.
+    # Price: below 2% / above 98% the market sits at its 1-cent tick and barely moves;
+    # the model's price error there is ~0.2 cents, so the play is recommended with a
+    # "low stakes" caution rather than refused (VALIDATION §5).
+    min_price: float = 0.0
+    max_price: float = 1.0
+    caution_price_band: float = 0.02
+    tick_tie_gap: float = 0.01  # at the tick limit, gaps under one tick are flagged as toss-ups
+    max_quote_age_s: float = 120.0  # hard: older than this, no recommendation
+    caution_quote_age_s: float = 30.0
+    max_bid_ask: float = 0.10  # hard
+    caution_bid_ask: float = 0.04
     # trades in the pre-snap window (historical) or resting book levels (live); off by
     # default because quote age and bid/ask width already catch thin markets
     min_trades: int = 0
-    min_ladder_quality: float = 0.2  # Kalshi pregame spread and total fits
+    # Kalshi pregame lines: a line is required; low fit quality or a Kalshi-only fallback
+    # (spread from the winner price, total from the week's median) is a caution
+    min_ladder_quality: float = 0.0
+    caution_ladder_quality: float = 0.2
     # support = percentile of training-data typicality (see response.Support); out-of-fold
     # error roughly doubles below 0.05 and triples below 0.005
     min_support: float = 0.01  # probability-weighted support of an option's outcomes
     min_outcome_support: float = 0.002  # any outcome with prob >= 5% must have at least this
-    max_qtr: int = 4  # OT is outside nfl4th's components (clock logic); refuse
+    max_qtr: int = 5  # 5 = overtime supported (with a caution); 4 refuses OT
     # end of regulation: onside kicks, kneel-downs and last-play states are rare in the
     # data and the response model misprices them (e.g. "down 1, kicking off, 9 s left");
     # the support measure does not catch this because it treats 20 s and 120 s as close
-    q4_refuse_last_seconds: float = 120.0
+    q4_refuse_last_seconds: float = 0.0  # 0 = off (end-game states are handled; VALIDATION §5)
     # field goals: make probability comes from the kicker-specific model at every
     # distance (no hard cutoff). An attempt below this make probability is not offered as
     # an option, so it can neither be recommended nor block a recommendation.
@@ -70,7 +81,21 @@ class DecisionConfig:
     # (DECISION.md). nfl4th uses 6 s for everything, which misprices conversions, after
     # which the clock usually keeps running (~38 s).
     clock_convert: float = 38.0
-    clock_convert_last2min: float = 14.0  # last 2 minutes of a half
+    # last 2 minutes of a half (medians by score state, 2025): Q2 ~9 s for everyone; Q4 a
+    # leading team runs the clock (~41 s), a trailing or tied team stops it (~12 s)
+    clock_convert_last2min: float = 9.0
+    clock_convert_q4_last2min_leading: float = 40.0
+    clock_convert_q4_last2min_other: float = 12.0
+    # a trailing or tied offense keeps this much time after a conversion (spike/timeout)
+    clock_min_left_trailing: float = 3.0
+    # kneel-out states: in Q4 the team with the ball (or receiving a kickoff) leads and the
+    # other side can't stop the clock (nfl4th's rule: < 120/80/40 s with 0/1/2 timeouts).
+    # These are rare in the training data and the response model under-prices them; the
+    # Kalshi market priced 378 such 2025 states at a median of 0.99 (its tick limit). The
+    # leader is valued at least this, the trailing side at most 1 - this: the rule can
+    # only push a kneel-out state toward decided, never make it look better for the loser.
+    kneel_out_price: float = 0.99
+    kneel_out_sd_price: float = 0.015
     clock_fail: float = 5.0
     clock_td: float = 5.0
     clock_fg: float = 4.0
@@ -154,15 +179,24 @@ def _apply_clock(p: pd.DataFrame, pre: pd.DataFrame, used: np.ndarray) -> None:
     game0 = pre["game_seconds_remaining"].to_numpy(float)
     q = pre["qtr"].to_numpy()
     used = np.minimum(used, half0)
-    crosses = np.isin(q, [2, 4]) & (qsr0 > 120) & (qsr0 - used < 120)
+    crosses = np.isin(q, [2, 4, 5]) & (qsr0 > 120) & (qsr0 - used < 120)
     used = np.where(crosses, qsr0 - 120, used)
     p["post_half_seconds_remaining"] = np.maximum(half0 - used, 0)
     p["post_game_seconds_remaining"] = np.maximum(game0 - used, 0)
 
 
 def _clock_used(outcome: np.ndarray, pre: pd.DataFrame, runoff: np.ndarray, cfg: DecisionConfig) -> np.ndarray:
-    late = np.isin(pre["qtr"].to_numpy(), [2, 4]) & (pre["quarter_seconds_remaining"].to_numpy(float) <= 120)
-    convert = np.where(late, cfg.clock_convert_last2min, cfg.clock_convert)
+    qtr = pre["qtr"].to_numpy()
+    qsr = pre["quarter_seconds_remaining"].to_numpy(float)
+    late = np.isin(qtr, [2, 4, 5]) & (qsr <= 120)
+    leading = pre["score_differential"].to_numpy(float) > 0
+    late_q4 = late & (qtr >= 4)
+    convert = np.where(late_q4, np.where(leading, cfg.clock_convert_q4_last2min_leading, cfg.clock_convert_q4_last2min_other),
+                       np.where(late, cfg.clock_convert_last2min, cfg.clock_convert))
+    # a team that is not ahead stops the clock after converting late, leaving time to play
+    keep = late & ~leading
+    half = pre["half_seconds_remaining"].to_numpy(float)
+    convert = np.where(keep, np.minimum(convert, np.maximum(half - cfg.clock_min_left_trailing, 5.0)), convert)
     table = {"convert": convert, "td": cfg.clock_td, "fail": cfg.clock_fail, "safety": cfg.clock_fail,
              "make": cfg.clock_fg, "miss": cfg.clock_fg, "normal": cfg.clock_punt, "blocked": cfg.clock_punt,
              "muff": cfg.clock_punt, "return_td": cfg.clock_punt}
@@ -302,17 +336,37 @@ def value_option(
     t = pd.concat([pre.iloc[s["play"].to_numpy()].reset_index(drop=True), s.reset_index(drop=True)], axis=1)
     pred = model.predict(t)
     out = s.reset_index(drop=True).copy()
-    out["price"] = pred["price"].to_numpy()
-    out["sd_logit"] = pred["sd_logit"].to_numpy()
-    out["support"] = pred["support"].to_numpy()
+    out["price"] = pred["price"].to_numpy(dtype=float)
+    out["sd_logit"] = pred["sd_logit"].to_numpy(dtype=float)
+    out["support"] = pred["support"].to_numpy(dtype=float)
+    # kneel-out: value at the market's observed level for such states
+    has = t["post_has_ball"].to_numpy() == 1
+    sd_team = t["post_score_diff"].to_numpy(float)
+    holder_leads = np.where(has, sd_team > 0, sd_team < 0)
+    trailer_to = np.where(has, t["post_opp_timeouts"].to_numpy(float), t["post_team_timeouts"].to_numpy(float))
+    g = t["post_game_seconds_remaining"].to_numpy(float)
+    kneel = ((t["post_qtr"].to_numpy() >= 4) & (t["post_kind"].to_numpy() != "pat") & holder_leads
+             & (((g < 120) & (trailer_to == 0)) | ((g < 80) & (trailer_to == 1)) | ((g < 40) & (trailer_to == 2))))
+    if kneel.any():
+        model_p = out["price"].to_numpy(float)
+        val = np.where(has, np.maximum(model_p, cfg.kneel_out_price), np.minimum(model_p, 1 - cfg.kneel_out_price))
+        out.loc[kneel, "price"] = val[kneel]
+        out.loc[kneel, "sd_logit"] = cfg.kneel_out_sd_price / np.maximum(val[kneel] * (1 - val[kneel]), 1e-4)
+        out.loc[kneel, "support"] = 1.0
+    out["kneel_out"] = kneel
     # game over: the result is known
     over = ((t["post_qtr"] >= 4) & (t["post_game_seconds_remaining"] <= 0)).to_numpy()
     decided = over & (t["post_score_diff"].to_numpy() != 0)
     out.loc[decided, "price"] = (t.loc[decided, "post_score_diff"] > 0).astype(float).to_numpy()
     out.loc[decided, "sd_logit"] = 0.0
     out.loc[decided, "support"] = 1.0
-    # tied at the end of regulation -> OT, which the model barely supports
-    out.loc[over & ~decided, "support"] = 0.0
+    # tied when time expires: overtime follows (or, at the end of a regular-season OT, a
+    # tie, which Kalshi settles at 0.50 a side). Valued at 0.5 with a wide sd: the market
+    # gives the stronger team a small edge that this does not capture.
+    tied = over & ~decided
+    out.loc[tied, "price"] = 0.5
+    out.loc[tied, "sd_logit"] = 0.3
+    out.loc[tied, "support"] = 1.0
     p = out["price"].to_numpy()
     out["sd_price"] = p * (1 - p) * out["sd_logit"].to_numpy()  # delta method
     return out
@@ -350,30 +404,43 @@ SNAPSHOT_COLUMNS = {
 }
 
 
-def _market_reasons(snap: pd.DataFrame, prepared: pd.DataFrame, cfg: DecisionConfig) -> list[list[str]]:
-    reasons: list[list[str]] = [[] for _ in range(len(snap))]
+def _market_reasons(snap: pd.DataFrame, prepared: pd.DataFrame, cfg: DecisionConfig) -> tuple[list[list[str]], list[list[str]]]:
+    """(hard reasons that block a recommendation, cautions that only flag it)."""
+    hard: list[list[str]] = [[] for _ in range(len(snap))]
+    caution: list[list[str]] = [[] for _ in range(len(snap))]
 
-    def add(mask, text):
+    def add(target, mask, text):
         for i in np.flatnonzero(np.asarray(mask, bool)):
-            reasons[i].append(text)
+            target[i].append(text)
 
     price = snap["price"]
-    add(price.isna(), "no winner-market price")
-    add(~price.isna() & ~price.between(cfg.min_price, cfg.max_price),
-        f"winner price outside [{cfg.min_price}, {cfg.max_price}]")
-    add(snap["quote_age_s"].isna() | (snap["quote_age_s"] > cfg.max_quote_age_s),
-        f"winner price stale (> {cfg.max_quote_age_s:.0f}s)")
-    add(snap["bid_ask"].notna() & (snap["bid_ask"] > cfg.max_bid_ask), f"winner market wider than {cfg.max_bid_ask}")
-    add(snap["n_trades"].fillna(0) < cfg.min_trades, "winner market too thin")
-    add(snap["halted"].fillna(False).astype(bool), "winner market halted")
-    add(snap["kalshi_spread_line"].isna() | (snap["kalshi_spread_quality"].fillna(0) < cfg.min_ladder_quality),
-        "Kalshi pregame spread ladder unusable")
-    add(snap["kalshi_total_line"].isna() | (snap["kalshi_total_quality"].fillna(0) < cfg.min_ladder_quality),
-        "Kalshi pregame total ladder unusable")
-    add(prepared["qtr"].to_numpy() > cfg.max_qtr, "overtime not supported")
-    add((prepared["qtr"].to_numpy() == 4) & (prepared["quarter_seconds_remaining"].to_numpy() <= cfg.q4_refuse_last_seconds),
+    has_price = price.notna()
+    age = snap["quote_age_s"]
+    width = snap["bid_ask"]
+    add(hard, ~has_price, "no winner-market price")
+    add(hard, has_price & ~price.between(cfg.min_price, cfg.max_price), f"winner price outside [{cfg.min_price}, {cfg.max_price}]")
+    add(caution, has_price & ((price < cfg.caution_price_band) | (price > 1 - cfg.caution_price_band)),
+        "price at the 1-cent tick limit: low stakes, values differ by fractions of a cent")
+    add(hard, has_price & (age.isna() | (age > cfg.max_quote_age_s)), f"winner price stale (> {cfg.max_quote_age_s:.0f}s)")
+    add(caution, has_price & (age > cfg.caution_quote_age_s) & (age <= cfg.max_quote_age_s),
+        f"winner price {cfg.caution_quote_age_s:.0f}-{cfg.max_quote_age_s:.0f}s old")
+    add(hard, width.notna() & (width > cfg.max_bid_ask), f"winner market wider than {cfg.max_bid_ask}")
+    add(caution, width.notna() & (width > cfg.caution_bid_ask) & (width <= cfg.max_bid_ask), f"winner market wider than {cfg.caution_bid_ask}")
+    add(hard, snap["n_trades"].fillna(0) < cfg.min_trades, "winner market too thin")
+    add(caution, has_price & snap["halted"].fillna(False).astype(bool), "no recent trade: price from the last quote")
+    for k in ("spread", "total"):
+        line, q = snap[f"kalshi_{k}_line"], snap[f"kalshi_{k}_quality"].fillna(0)
+        src = snap.get(f"kalshi_{k}_source", pd.Series("ladder", index=snap.index)).fillna("ladder")
+        add(hard, line.isna() | ((src == "ladder") & (q < cfg.min_ladder_quality)), f"no Kalshi pregame {k}")
+        add(caution, line.notna() & (src != "ladder"), f"Kalshi pregame {k} from fallback ({'winner price' if k == 'spread' else 'week median'})")
+        add(caution, line.notna() & (src == "ladder") & (q < cfg.caution_ladder_quality), f"Kalshi pregame {k} ladder fit is weak")
+    qtr = prepared["qtr"].to_numpy()
+    add(hard, qtr > cfg.max_qtr, "overtime not supported")
+    add(caution, qtr == 5, "overtime: few training states")
+    add(hard, (cfg.q4_refuse_last_seconds > 0) & (qtr == 4)
+        & (prepared["quarter_seconds_remaining"].to_numpy() <= cfg.q4_refuse_last_seconds),
         f"final {cfg.q4_refuse_last_seconds:.0f}s of regulation not supported")
-    return reasons
+    return hard, caution
 
 
 def add_4th_probs(
@@ -409,6 +476,9 @@ def add_4th_probs(
     km = fg_model or kicker_model()
     data = df.reset_index(drop=True).copy()
     snap = market_snapshot.reset_index(drop=True).copy()
+    for c in ("kalshi_spread_source", "kalshi_total_source"):
+        if c not in snap:
+            snap[c] = "ladder"
     for c in SNAPSHOT_COLUMNS:
         if c == "halted":
             snap[c] = snap[c].map(lambda v: bool(v) if pd.notna(v) else False)
@@ -430,7 +500,7 @@ def add_4th_probs(
     if len(prepared) != len(data):
         raise ValueError("schedule join changed the number of rows")
 
-    reasons = _market_reasons(snap, prepared, config)
+    reasons, cautions = _market_reasons(snap, prepared, config)
     ok = np.array([not r for r in reasons])
     n = len(prepared)
     out = data.copy()
@@ -485,11 +555,19 @@ def add_4th_probs(
         why = list(reasons[i])
         evs = {o: res.at[i, f"{o}_ev"] for o in OPTIONS if pd.notna(res.at[i, f"{o}_ev"])}
         if not why:
-            for o in list(evs):
-                if res.at[i, f"{o}_support"] < config.min_support or (
-                    pd.notna(res.at[i, f"{o}_min_support"]) and res.at[i, f"{o}_min_support"] < config.min_outcome_support
-                ):
-                    why.append(f"{o}: outcome states outside model support")
+            # an option whose outcome states the model can't value is left out of the
+            # comparison (with a caution) instead of blocking the whole recommendation
+            unsupported = [o for o in evs if res.at[i, f"{o}_support"] < config.min_support or (
+                pd.notna(res.at[i, f"{o}_min_support"]) and res.at[i, f"{o}_min_support"] < config.min_outcome_support)]
+            supported = {o: v for o, v in evs.items() if o not in unsupported}
+            if unsupported and len(supported) >= 2:
+                top = max(supported.values())
+                for o in unsupported:
+                    note = "its unreliable value would rank first" if evs[o] > top else "its unreliable value ranks below"
+                    cautions[i].append(f"{o} not evaluated: outside model support ({note})")
+                evs = supported
+            elif unsupported:
+                why.extend(f"{o}: outcome states outside model support" for o in unsupported)
         if why or len(evs) < 2:
             rec.append(None)
             reason.append("; ".join(why) if why else "fewer than two options available")
@@ -499,8 +577,13 @@ def add_4th_probs(
         best, second = order[0], order[1]
         g_ = evs[best] - evs[second]
         sd = float(np.hypot(res.at[i, f"{best}_sd"], res.at[i, f"{second}_sd"]))
+        price_i = snap.at[i, "price"]
+        if (price_i < config.caution_price_band or price_i > 1 - config.caution_price_band) and g_ < config.tick_tie_gap:
+            cautions[i].append("toss-up: at the tick limit the market can't separate these options")
         rec.append(best), reason.append(None), gap.append(g_), gap_sd.append(sd)
         p_best.append(float(norm.cdf(g_ / sd)) if sd > 0 else 1.0)
+    res["cautions"] = ["; ".join(c) if c and r_ is not None else None for c, r_ in zip(cautions, rec)]
+    res["confidence"] = np.where(pd.Series(rec).isna(), None, np.where(res["cautions"].notna(), "caution", "normal"))
     res["recommendation"] = rec
     res["no_recommendation"] = res["recommendation"].isna()
     res["no_recommendation_reason"] = reason

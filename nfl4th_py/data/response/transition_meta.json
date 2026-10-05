@@ -42,7 +42,7 @@
   "post_kind_kickoff",
   "post_game_seconds_remaining"
  ],
- "best_iteration": 1662,
+ "best_iteration": 1228,
  "params": {
   "objective": "reg:squarederror",
   "eta": 0.03,
@@ -54,5 +54,6 @@
   "tree_method": "hist",
   "seed": 2025
  },
- "sd_scale": 1.2063808267469103
+ "sd_scale": 1.2232587239663555,
+ "fourth_down_weight": 1.0
 }

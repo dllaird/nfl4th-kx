@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 
 from nfl4th_py.market import ladders
+
+MARGIN_SD = 13.5  # typical sd of an NFL final margin, used to turn a win price into a spread
 
 SNAPSHOT_COLUMNS = ["ticker", "bid", "ask", "age_s", "volume", "vwap", "vwap_age_s"]
 
@@ -76,7 +79,15 @@ def game_strength(
 
     win = snap["KXNFLGAME"].join(meta, on="ticker")
     home_win = _home_win_price(win, game["home_team"], game["away_team"])
+    # Kalshi-only fallback when the spread ladder can't be fit: the pregame winner price
+    # implies a mean margin under a normal margin distribution
+    spread_source = "ladder" if m_fit.mean is not None else ("winner_price" if home_win is not None else "none")
+    if m_fit.mean is None and home_win is not None:
+        m_fit.mean = m_fit.median = float(MARGIN_SD * norm.ppf(np.clip(home_win, 0.01, 0.99)))
+        m_fit.sd, m_fit.model = MARGIN_SD, "winner_price"
     return {
+        "kalshi_spread_source": spread_source,
+        "kalshi_total_source": "ladder" if t_fit.mean is not None else "none",
         "game_id": game["game_id"],
         "kickoff_ts": kickoff_ts,
         "kalshi_spread_line": m_fit.mean,
@@ -124,4 +135,16 @@ def with_kalshi_lines(games: pd.DataFrame, strength: pd.DataFrame) -> pd.DataFra
     out["total_line"] = out["game_id"].map(s["kalshi_total_line"])
     out["home_total"] = (out["total_line"] + out["spread_line"]) / 2
     out["away_total"] = (out["total_line"] - out["spread_line"]) / 2
+    return out
+
+
+def fill_missing_totals(strength: pd.DataFrame, week: pd.Series) -> pd.DataFrame:
+    """Kalshi-only fallback for games whose total ladder can't be fit: the median Kalshi
+    pregame total of that week's other games (source 'week_median')."""
+    out = strength.copy()
+    wk = out["game_id"].map(week)
+    med = out.groupby(wk)["kalshi_total_line"].transform("median")
+    miss = out["kalshi_total_line"].isna() & med.notna()
+    out.loc[miss, "kalshi_total_line"] = med[miss]
+    out.loc[miss, "kalshi_total_source"] = "week_median"
     return out

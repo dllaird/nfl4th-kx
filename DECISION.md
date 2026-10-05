@@ -46,19 +46,35 @@ Decisions can be logged with `decision.log_decisions(result, raw_quotes, directo
 
      | outcome | seconds |
      |---|---|
-     | non-TD conversion | 38 (14 in a half's last 2 min) |
+     | non-TD conversion | 38 |
+     | non-TD conversion, last 2 min of Q2 | 9 |
+     | non-TD conversion, last 2 min of Q4/OT, team leading | 40 |
+     | non-TD conversion, last 2 min of Q4/OT, team tied or trailing | 12 |
      | failure, safety, TD | 5 |
      | FG make/miss | 4 |
      | punt | 9 |
 
      nfl4th uses 6 s for everything, which understated a conversion's clock use by about
      30 s and doubled a bias against going for it (VALIDATION.md §5).
-     - The clock stops at the two-minute warning.
+     - A team that is not ahead stops the clock after a late conversion, so it always
+       keeps at least 3 s.
+     - The clock stops at the two-minute warning (Q2, Q4 and OT).
      - `runoff` overrides a conversion's clock use when 6 + runoff is larger. nfl4th
        ignores `runoff` (see PORTING_NOTES §5b).
    - **End of the 1st half:** the state becomes the Q3 kickoff to the 2nd-half receiver.
-   - **End of game:** the outcome is valued exactly (1 or 0). A tie at the end of
-     regulation means OT, which gets support 0.
+   - **Kneel-out states:** in Q4 or OT, the team with the ball (or receiving a kickoff)
+     leads and the other side can't stop the clock (under 120/80/40 s with 0/1/2
+     timeouts, nfl4th's rule). The leader's value is set to at least 0.99, and the
+     trailing side's to at most 0.01.
+     - 0.99 is the Kalshi median for 378 such 2025 states, which is the market's tick
+       limit.
+     - These states are rare in the training data, and the response model under-priced
+       them. That made a late field goal while down 4–7 look worthwhile.
+   - **End of game:** a decided outcome is valued exactly (1 or 0). A tie when time
+     expires (overtime follows, or a regular-season tie that Kalshi settles at 0.50) is
+     valued at 0.5 with a wide sd.
+   - **Overtime:** supported, using OT's own clock. Plays carry a caution because the
+     training data has few OT states.
 3. **Valuation:** every state goes through the Phase 5 transition model, anchored on the
    live price. Each prediction comes with a price, a logit sd (calibrated) and a support
    percentile.
@@ -69,31 +85,50 @@ Decisions can be logged with `decision.log_decisions(result, raw_quotes, directo
    - **Gap:** the best EV minus the second best.
    - **Gap sd** = √(sd_best² + sd_second²).
    - **`prob_best_option_is_best`** = Φ(gap / gap sd).
-5. **Recommendation:** the option with the highest EV, unless a refusal rule fires.
+5. **Recommendation:** the option with the highest EV among the options the model can
+   value, unless a hard rule fires. If one option's outcome states are outside the
+   model's support, that option is left out and named in a caution, which also says
+   whether its unreliable value would have ranked first. With fewer than two valuable
+   options, the play is refused.
 
-## Refusal rules (`DecisionConfig`, all configurable)
-| rule | default | why |
-|---|---|---|
-| FG not offered when the kicker's make probability < fg_min_make_prob | 1% | a hopeless attempt is not an option, so it can neither win nor block a recommendation |
-| winner price outside [min_price, max_price] | [0.03, 0.97] | the response model loses to "no move" there (RESPONSE_MODEL.md) |
-| price older than max_quote_age_s | 30 s | stale |
-| bid/ask wider than max_bid_ask | 0.04 | wide market |
-| n_trades below min_trades | 0 (off) | thin; quote age and width already cover this |
-| halted | — | — |
-| Kalshi spread or total ladder missing or quality < min_ladder_quality | 0.2 | no team-strength features, and no fallback to the betting line |
-| qtr > max_qtr | 4 | OT clock logic is outside nfl4th's components |
-| Q4 with ≤ q4_refuse_last_seconds left | 120 s | end-of-game states (onside kicks, last plays) are mispriced, and the support measure misses them (VALIDATION.md §5) |
-| option support (probability-weighted) < min_support | 0.01 | outside the model's data |
-| any outcome with prob ≥ 5% and support < min_outcome_support | 0.002 | as above |
+## Hard rules and cautions (`DecisionConfig`, all configurable)
+A **hard rule** refuses the recommendation. A **caution** still recommends but sets
+`confidence = "caution"` and lists the reason in `cautions`.
+
+| condition | hard limit | caution | why |
+|---|---|---|---|
+| no winner price | refuse | — | nothing to anchor on |
+| price near 0 or 1 | — (`min_price`/`max_price` off) | below 2% or above 98% | the market is at its 1¢ tick and barely moves; the model's price error there is ~0.2¢ |
+| options within one tick at a tick-limit price | — | "toss-up" | the market can't separate the options |
+| price age | > 120 s | 30–120 s | flips < 1.6% of recommendations even at 60 s (VALIDATION §3) |
+| bid/ask width | > 10¢ | 4–10¢ | |
+| no trade in 60 s | — | price from the last quote | |
+| Kalshi pregame spread / total | missing | fit quality < 0.2, or a Kalshi-only fallback | weak ladders are still within 1–2 points of the betting line |
+| overtime | `max_qtr` = 5 (set 4 to refuse) | always | few training states |
+| last 2 min of Q4 | `q4_refuse_last_seconds` = 0 (off) | — | handled by the clock and kneel-out rules above |
+| FG make probability < `fg_min_make_prob` | FG not offered | — | a hopeless attempt is not an option |
+| option support (probability-weighted) < 0.01, or an outcome with prob ≥ 5% and support < 0.002 | refuse only if fewer than two options remain | option left out, named in a caution | outside the model's data |
+
+The Kalshi-only pregame fallbacks are:
+- **Spread:** if the ladder can't be fit (1 game in 2025), it is implied from the Kalshi
+  pregame winner price with a normal margin (sd 13.5).
+- **Total:** if the ladder can't be fit (5 games), the median Kalshi total of that week's
+  games is used.
 
 A refused play gets `recommendation = None`, `no_recommendation = True` and a
-`no_recommendation_reason`. Nothing is valued for it: there is no WP-model fallback.
-`wp_baseline` is not imported by this module, and `tests/test_quarantine.py` enforces
-that.
+`no_recommendation_reason`. There is no WP-model fallback. `wp_baseline` is not imported
+by this module, and `tests/test_quarantine.py` enforces that.
 
-On all 3,997 4th-down plays in 2025 (out-of-sample fold models, final defaults):
-- **recommendations:** punt 1,406; FG 858; go 739;
-- **refused:** 994 (24.9%). Breakdown in VALIDATION.md §2.
+On all 3,997 4th-down plays in 2025 (out-of-sample fold models, current defaults):
+
+| | plays |
+|---|---|
+| recommended | 3,827 (95.7%): punt 1,792, FG 1,087, go 948 |
+| normal confidence | 3,197 |
+| caution | 630 (335 are tick-limit toss-ups) |
+| refused | 170 (4.3%), all model support except 4 very wide markets |
+
+Breakdown in VALIDATION.md §2.
 
 ## Anchoring: does conditioning on the pre-play price bias counterfactual values?
 The pre-snap price already reflects the market's expectation of the decision and its

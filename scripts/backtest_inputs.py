@@ -52,17 +52,23 @@ def engine_inputs(d: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     wx = _weather()
     plays["wind"] = d["game_id"].map(wx["wind"]).to_numpy(dtype=float)
     plays["temp"] = d["game_id"].map(wx["temp"]).to_numpy(dtype=float)
+    # no trade near the snap: fall back to the last 1-minute candle's quote midpoint
+    no_trade = d["pre_price"].isna() & d["candle_mid_pos"].notna() & (d["candle_age_s"] <= 120)
+    price = np.where(no_trade, d["candle_mid_pos"], d["pre_price"])
+    age = np.where(no_trade, d["candle_age_s"], d["pre_last_age_s"])
     snap = pd.DataFrame(
         {
-            "price": d["pre_price"].to_numpy(),
+            "price": price,
             "bid_ask": d["candle_spread"].to_numpy(),
-            "quote_age_s": d["pre_last_age_s"].to_numpy(),
+            "quote_age_s": age,
             "n_trades": d["pre_n_trades"].to_numpy(),
-            "halted": d["flag_pre_stale"].to_numpy(),
+            "halted": d["flag_pre_stale"].to_numpy() | no_trade,
             "kalshi_spread_line": d["kalshi_spread_line"].to_numpy(),
             "kalshi_total_line": d["kalshi_total_line"].to_numpy(),
             "kalshi_spread_quality": d["kalshi_spread_quality"].to_numpy(),
             "kalshi_total_quality": d["kalshi_total_quality"].to_numpy(),
+            "kalshi_spread_source": d["kalshi_spread_source"].to_numpy(),
+            "kalshi_total_source": d["kalshi_total_source"].to_numpy(),
         }
     )
     return plays, snap

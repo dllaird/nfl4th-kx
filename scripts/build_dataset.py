@@ -100,7 +100,7 @@ def main() -> None:
         if n % 25 == 0:
             log.info("%d/%d games", n, len(games))
 
-    strength = pd.DataFrame(strengths)
+    strength = pregame.fill_missing_totals(pd.DataFrame(strengths), sched["week"])
     strength.to_parquet(CACHE / "kalshi_pregame_2025.parquet")
     d = dataset.finalize(pd.concat(parts, ignore_index=True))
     s = strength.set_index("game_id")
@@ -112,6 +112,8 @@ def main() -> None:
     d["kalshi_posteam_total"] = (total + d["kalshi_posteam_spread"]) / 2
     d["kalshi_spread_quality"] = d["game_id"].map(s["kalshi_spread_quality"])
     d["kalshi_total_quality"] = d["game_id"].map(s["kalshi_total_quality"])
+    d["kalshi_spread_source"] = d["game_id"].map(s["kalshi_spread_source"])
+    d["kalshi_total_source"] = d["game_id"].map(s["kalshi_total_source"])
     # candle quote converted to the posteam's view (home market quote)
     d["candle_spread"] = d["candle_ask"] - d["candle_bid"]
     d["candle_mid_pos"] = np.where(

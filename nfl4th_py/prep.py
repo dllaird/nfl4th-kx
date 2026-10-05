@@ -113,7 +113,9 @@ def prepare_df(df: pd.DataFrame, games: pd.DataFrame) -> pd.DataFrame:
     )
     out["down"] = 4
     out["half_seconds_remaining"] = np.where(
-        qtr.isin([2, 4]), out["quarter_seconds_remaining"], out["quarter_seconds_remaining"] + 900
+        # qtr 5 (OT): its own clock. nfl4th adds 900 s for any quarter other than 2 or 4,
+        # which only matters for OT rows that R does not support anyway
+        qtr.isin([2, 4, 5]), out["quarter_seconds_remaining"], out["quarter_seconds_remaining"] + 900
     )
     out["game_seconds_remaining"] = np.where(
         qtr <= 2, out["half_seconds_remaining"] + 1800, out["half_seconds_remaining"]

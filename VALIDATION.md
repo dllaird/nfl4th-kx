@@ -56,29 +56,42 @@ Field goal make probabilities come from the kicker-specific model fit on 2014–
 ### Coverage
 | | count |
 |---|---|
-| engine recommendation | 3,003 (punt 1,406, FG 858, go 739) |
-| no recommendation | 994 (24.9%) |
+| engine recommendation | **3,827 (95.7%)**: punt 1,792, FG 1,087, go 948 |
+| of which normal confidence | 3,197 |
+| of which caution | 630 |
+| no recommendation | 170 (4.3%) |
 | original nfl4th (betting lines) | go 1,655, punt 1,381, FG 961 (always recommends) |
 
-Refusal reasons (a play can have several):
+- **Refusals:** all 170 are model support with fewer than two options left to compare,
+  except 4 plays with a market wider than 10¢.
+- **Cautions** (a play can have several):
 
-| reason | plays |
-|---|---|
-| winner price outside [0.03, 0.97] | 535 |
-| final 120 s of regulation | 250 |
-| Kalshi pregame spread / total ladder unusable | 154 / 115 |
-| outcome states outside model support | 85 |
-| stale price (> 30 s) | 77 |
-| market wider than 4¢ | 73 |
-| no price | 31 |
-| halted (no trade in 60 s) | 31 |
-| OT | 24 |
+  | caution | plays |
+  |---|---|
+  | price at the 1¢ tick limit (below 2% or above 98%) | 344 |
+  | tick-limit toss-up (options within one tick) | 335 |
+  | weak pregame spread / total ladder fit | 129 / 38 |
+  | an option left out for low support | 101 (15 where its unreliable value would have ranked first) |
+  | Kalshi total from the week-median fallback / spread from the winner price | 74 / 9 |
+  | market 4–10¢ wide | 69 |
+  | price 30–120 s old | 36 |
+  | overtime | 24 |
+  | price from the last quote (no trade in 60 s) | 10 |
 
-Before the kicker model, 666 plays were refused for support. 590 of those were refused
-only because the engine valued a field goal from beyond the 53, which nfl4th treats as
-0%. See §5.
+- **Accuracy by confidence:** cautioned recommendations match the market at least as
+  well as normal ones. Mean (settled − EV) for the option taken is +0.06 points (MAE 1.7)
+  with a caution and +0.10 (MAE 3.0) without, over all prices.
+- **Final 2 minutes of Q4:** recommended on 229 of 250 plays, against 0 before.
+  Excluding toss-ups (149 plays), the engine agrees with nfl4th 82% of the time, and
+  coaches made the engine's call 86% of the time.
+- **Overtime:** all 24 plays recommended.
+- **History:** before this round of changes, the engine refused 994 plays (24.9%), and
+  originally 1,553 (38.9%). See §5.
 
-### Engine vs original nfl4th (3,003 plays where the engine recommends)
+### Engine vs original nfl4th (3,827 plays where the engine recommends)
+The tables below are from the 3,003-play run before the refusal changes; with all 3,827
+plays, agreement is 76.9%, coaches matched the engine 83.1% and nfl4th 73.5%.
+
 - **Agreement: 80.0%.** Rows are the engine's choice, columns nfl4th's:
 
   | engine \ nfl4th | go | FG | punt |
@@ -107,9 +120,12 @@ only because the engine valued a field goal from beyond the 53, which nfl4th tre
 
   | option | mean (settled − EV) | 90% CI | n |
   |---|---|---|---|
-  | go | **+0.51** | [−0.02, +1.04] | 552 |
-  | FG | −0.08 | [−0.29, +0.13] | 832 |
-  | punt | −0.01 | [−0.13, +0.11] | 1,668 |
+  | go | **+0.63** | [+0.06, +1.25] | 638 |
+  | FG | +0.01 | [−0.31, +0.35] | 923 |
+  | punt | −0.06 | [−0.19, +0.07] | 1,823 |
+
+  (Current run, response model retrained on all 285 games. The go bias is now
+  significant at 90%.)
 
   When teams went for it, the market ended about half a point higher than the engine
   predicted.
@@ -161,7 +177,7 @@ Gap is the engine's EV gap ± sd, in points.
 
 The full list is in `reports/backtest_disagreements.parquet`.
 
-## 3. Sensitivity (2,925–3,003 recommended plays each)
+## 3. Sensitivity (2,925–3,003 recommended plays each; run before the refusal changes)
 | perturbation | recommendation flips | mean abs. change in go_boost |
 |---|---|---|
 | pre-play price −1 point / +1 point | 0.44% / 0.50% | 0.06 points |
@@ -175,6 +191,12 @@ The full list is in `reports/backtest_disagreements.parquet`.
 Recommendations are stable to small price and spread changes. A 1-point price move shifts
 all options by nearly the same amount, so it rarely reorders them. Staleness of up to 30 s
 flips fewer than 1% of decisions, which supports the 30 s default.
+
+With the tick-limit plays included (current run, 3,564–3,827 plays):
+- **Price:** a ±1-point move flips 1.8–1.9% of recommendations, because at a 1% or 99%
+  price a 1-point move is large relative to the values involved.
+- **Spread:** ±1 point flips 0.8–1.1%.
+- **Staleness:** 60 s flips 1.6%.
 
 ## 4. How often the markets were unusable (45,186 in-game snaps)
 | condition | share of snaps |
@@ -224,6 +246,33 @@ extreme prices, and 104 (2.6%) for stale, wide, halted or missing prices.
 
      The threshold removes hopeless attempts without changing which field goals are
      recommended.
+5. **Fewer refusals: end game, extreme prices, thin markets, OT** (994 → 170 refusals).
+   - **Late clock:** after a late conversion, a trailing team stops the clock (median 12 s
+     in Q4) and a leading team runs it (40 s). The engine had used 14 s for everyone. That
+     ran out the clock on trailing teams and valued their conversions as losses.
+   - **Kneel-out states:** valued at the Kalshi market's observed level (median 0.99, the
+     tick limit) as a bound. The model had valued "down 1, kicking off, 9 s left" at
+     9–26%, which made late field goals when down 4–7 look good.
+   - **Final-2-minutes refusal removed.** With these fixes, the late-game recommendations
+     no longer include field goals when down 4–7 with seconds left.
+   - **Extreme prices.** The old [0.03, 0.97] limit came from a logit-scale comparison.
+     In price terms the model beats "no move" between 2–3% and 97–98%. Beyond that the
+     market sits at its 1¢ tick, and both errors are about 0.1–0.2¢. These plays are now
+     recommended with a "low stakes" caution, plus a "toss-up" caution when the options
+     are within one tick.
+     - The market can't express differences that small. For a team down two scores
+       with a minute left at a 1% price, the recommendation can be football-wrong (e.g.
+       punt), and it is labeled a toss-up.
+   - **Market thresholds:** stale and wide markets are cautions up to 120 s and 10¢. A
+     missing trade price falls back to the last 1-minute quote.
+   - **Pregame lines:** weak ladder fits are cautions. Missing ladders use Kalshi-only
+     fallbacks: spread from the pregame winner price, total from the week's median.
+     This also added the 6 week-1 games to the response model's training data (285
+     games; out-of-sample 4th-down logit RMSE 0.180 vs 0.185).
+   - **Overtime:** supported with OT's own clock, and a tie when time expires is valued
+     at 0.5.
+   - **Unsupported options:** an option outside the model's support is left out of the
+     comparison with a caution, instead of blocking the play.
 
 ## 6. Caveats and what could not be validated
 - **One season.** 285 games, of which 279 have Kalshi pregame lines. Most 4th-down

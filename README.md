@@ -33,7 +33,7 @@ game-winner market reprices after plays:
 | Kalshi data | All 285 games of the 2025 season: winner, spread and total markets. Trade tape and 1-minute candles, via the public API |
 | Market-response model | Average error of 1.1 cents on post-play prices, vs 1.5 for nfl4th's win-probability models anchored to the same price (out-of-sample) |
 | Field goals | Kicker-specific model, out-of-sample on 2025 field goals: log loss 0.360 vs 0.365 for nfl4th's model |
-| Decision engine | Out-of-sample backtest on 3,997 2025 fourth downs. Recommends on 3,003 and agrees with nfl4th on 80% of those |
+| Decision engine | Out-of-sample backtest on 3,997 2025 fourth downs. Recommends on 95.7% (3,827), including the final 2 minutes and overtime; 630 carry a caution |
 | Live mode | `nfl4th-py live`, tested against live Kalshi orderbooks but not yet during a game |
 
 Details:
@@ -123,11 +123,14 @@ Tests: `python -m pytest`.
 
 - **One season of data.** Kalshi NFL game markets start in 2025. Most 4th-down
   comparisons are not statistically significant on the late-season holdout.
-- **Conversions are undervalued by about half a point.** The response model undervalues
+- **Conversions are undervalued by about half a point** (+0.63, 90% CI +0.06 to +1.25). The response model undervalues
   successful 4th-down conversions, so the engine leans slightly against going for it.
-- **Some plays get no recommendation.** The engine refuses when prices are below 3% or
-  above 97%, in the final 2 minutes of regulation, in overtime, or when outcome states
-  are outside the model's training data.
+- **Some plays get no recommendation, and some carry a caution.**
+  - The engine refuses about 4% of plays, mostly when fewer than two options can be
+    valued within the model's training data.
+  - It flags recommendations made with marginal inputs: prices at the 1¢ tick limit
+    (where the market can't separate options), stale or wide markets, weak pregame
+    ladders, or overtime.
 - **No in-game adjustments to outcome probabilities.** The conversion and punt
   components don't account for changes such as a backup QB. The field goal model knows
   the kicker and the game's weather, but picks up a replacement kicker only after his
