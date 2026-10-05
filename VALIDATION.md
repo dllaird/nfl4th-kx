@@ -56,14 +56,22 @@ Field goal make probabilities come from the kicker-specific model fit on 2014–
 ### Coverage
 | | count |
 |---|---|
-| engine recommendation | **3,827 (95.7%)**: punt 1,787, FG 1,079, go 961 |
+| market engine recommendation | **3,827 (95.7%)**: punt 1,787, FG 1,079, go 961 |
 | of which normal confidence | 3,244 |
 | of which caution | 583 |
-| no recommendation | 170 (4.3%) |
+| original nfl4th fallback | **170 (4.3%)**: punt 81, go 78, FG 11 |
+| no recommendation | 0 |
 | original nfl4th (betting lines) | go 1,655, punt 1,381, FG 961 (always recommends) |
 
-- **Refusals:** all 170 are model support with fewer than two options left to compare,
-  except 4 plays with a market wider than 10¢.
+- **Fallback plays:** the market engine declines 170 plays and the original nfl4th decides
+  them (DECISION.md).
+  - **Why it declines:** all are model support with fewer than two options left to
+    compare, except 4 plays with a market wider than 10¢.
+  - **Which plays:** mostly blowouts: 138 have a margin of 9+ points and 96 are at the 1¢
+    tick limit.
+  - **Coaches** made the fallback's call 78% of the time.
+  - **Comparisons:** the engine-vs-nfl4th comparisons below use market-decided plays
+    only, since fallback plays agree with nfl4th by construction.
 - **Cautions** (a play can have several):
 
   | caution | plays |
@@ -275,6 +283,15 @@ extreme prices, and 104 (2.6%) for stale, wide, halted or missing prices.
      at 0.5.
    - **Unsupported options:** an option outside the model's support is left out of the
      comparison with a caution, instead of blocking the play.
+6. **Original-nfl4th fallback** (170 → 0 unrecommended plays). Plays the market engine
+   still can't decide get the original nfl4th recommendation, labeled
+   `recommendation_source = "nfl4th_fallback"`.
+   - Letting the market model value them anyway was the alternative. On those plays its
+     value for the chosen option missed the settled price by 0.98 points, against 0.89
+     for "no move", with a median option gap of 0.15 points. The fallback was chosen
+     instead.
+   - This reverses the original "no WP fallback" requirement; the market path still never
+     loads the WP models unless a play needs the fallback.
 
 ## 6. Caveats and what could not be validated
 - **One season.** 285 games, of which 279 have Kalshi pregame lines. Most 4th-down

@@ -22,8 +22,8 @@ game-winner market reprices after plays:
   Kalshi trades.
 - **The decision** is the option with the highest expected post-play price. It comes
   with the gap to the next option and its uncertainty. When the market or the model
-  isn't reliable enough, the engine gives no recommendation and says why. It never falls
-  back to a win-probability model.
+  isn't reliable enough for a play (about 4% of 2025 4th downs, mostly blowouts), the
+  play falls back to the original nfl4th calculation and is labeled as such.
 
 ## Status
 
@@ -33,7 +33,7 @@ game-winner market reprices after plays:
 | Kalshi data | All 285 games of the 2025 season: winner, spread and total markets. Trade tape and 1-minute candles, via the public API |
 | Market-response model | Average error of 1.1 cents on post-play prices, vs 1.5 for nfl4th's win-probability models anchored to the same price (out-of-sample) |
 | Field goals | Kicker-specific model, out-of-sample on 2025 field goals: log loss 0.360 vs 0.365 for nfl4th's model |
-| Decision engine | Out-of-sample backtest on 3,997 2025 fourth downs. Recommends on 95.7% (3,827), including the final 2 minutes and overtime; 583 carry a caution |
+| Decision engine | Out-of-sample backtest on 3,997 2025 fourth downs. Every play gets a call: 3,827 (95.7%) from the market engine (583 with a caution), 170 from the original-nfl4th fallback |
 | Live mode | `nfl4th-py live`, tested against live Kalshi orderbooks but not yet during a game |
 
 Details:
@@ -125,9 +125,9 @@ Tests: `python -m pytest`.
   comparisons are not statistically significant on the late-season holdout.
 - **Conversions are undervalued by about half a point** (+0.63, 90% CI +0.06 to +1.25). The response model undervalues
   successful 4th-down conversions, so the engine leans slightly against going for it.
-- **Some plays get no recommendation, and some carry a caution.**
-  - The engine refuses about 4% of plays, mostly when fewer than two options can be
-    valued within the model's training data.
+- **Some plays use the original nfl4th, and some carry a caution.**
+  - About 4% of plays, mostly blowouts where fewer than two options can be valued within
+    the model's training data, fall back to the original nfl4th.
   - It flags recommendations made with marginal inputs: prices at the 1¢ tick limit
     (where the market can't separate options), stale or wide markets, weak pregame
     ladders, or overtime.

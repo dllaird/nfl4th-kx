@@ -142,6 +142,11 @@ def format_decision(row: pd.Series, situation: dict) -> str:
         f"(bid/ask {row['winner_bid_ask']:.3f}) | pregame spread {row['kalshi_posteam_spread']:+.1f}, "
         f"total {row['kalshi_total_line']:.1f} | kicker {kname}"
     )
+    if row.get("recommendation_source") == "nfl4th_fallback":
+        wp = lambda c: "-" if pd.isna(row.get(c)) else f"{100 * row[c]:.1f}%"  # noqa: E731
+        return (head + f"\n  RECOMMEND (original nfl4th fallback): {row['recommendation'].upper()} by "
+                f"{100 * row['ev_gap']:.1f} WP pts | nfl4th WP go {wp('go_wp')}, FG {wp('fg_wp')}, punt {wp('punt_wp')}"
+                f"\n  Market engine declined: {row['fallback_reason']}")
     if row["no_recommendation"]:
         return head + f"\n  NO RECOMMENDATION: {row['no_recommendation_reason']}"
     table = decision_table(row).to_string(index=False)

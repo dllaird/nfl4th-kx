@@ -28,8 +28,10 @@ Columns are described in `DATA_DICTIONARY.md`.
   - 1-minute candles provide quote quality fields only. Kalshi has no orderbook history,
     so depth is not available for 2025.
 - **Team strength:** the Kalshi pregame implied spread and total at kickoff (Phase 3),
-  held fixed for the game. Six week-1 games have no usable spread or total ladder; their
-  strength fields are NaN. There is no fallback to the betting line.
+  held fixed for the game. Every game has a value. Ladders that can't be fit use
+  Kalshi-only fallbacks: the spread from the pregame winner price (1 game), the total from
+  the week's median Kalshi total (5 games). A weak spread ladder is averaged with the
+  winner-price spread (10 games). The betting line is never used.
 
 ## Timing definitions (measured, not assumed)
 - **Snap** = nflfastR `time_of_day`. The median `end_clock_time − time_of_day` is 0.8 s for

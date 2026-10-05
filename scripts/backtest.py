@@ -72,7 +72,7 @@ def rec_of(df: pd.DataFrame, cols=("go_wp", "fg_wp", "punt_wp")) -> pd.Series:
 
 
 def flip_rate(base: pd.DataFrame, other: pd.DataFrame) -> dict:
-    both = base["recommendation"].notna() & other["recommendation"].notna()
+    both = base["recommendation_source"].eq("market") & other["recommendation_source"].eq("market")
     flips = (base.loc[both, "recommendation"] != other.loc[both, "recommendation"]).mean()
     dgap = (other.loc[both, "go_boost"] - base.loc[both, "go_boost"]).abs().mean()
     return {"n": int(both.sum()), "flip_rate": float(flips), "mean_abs_change_go_boost_pts": float(dgap)}
@@ -100,15 +100,22 @@ def main() -> None:
         f[f"engine_{o}_sd"] = eng[f"{o}_sd"]
         f[f"nfl4th_{o}_wp"] = orig[f"{o}_wp"]
     for c in ("ev_gap", "ev_gap_sd", "prob_best_option_is_best", "no_recommendation_reason", "go_boost",
-              "first_down_prob", "fg_make_prob", "fg_offered", "confidence", "cautions"):
+              "first_down_prob", "fg_make_prob", "fg_offered", "confidence", "cautions",
+              "recommendation_source", "fallback_reason"):
         f[f"engine_{c}"] = eng[c]
     f["nfl4th_go_boost"] = orig["go_boost"]
 
-    rec = f["engine_rec"].notna()
-    summary["engine_recommendations"] = f["engine_rec"].value_counts().to_dict()
-    summary["engine_no_recommendation"] = int((~rec).sum())
-    reasons = f.loc[~rec, "engine_no_recommendation_reason"].str.split("; ").explode()
-    summary["refusal_reasons"] = reasons.str.replace(r"^(go|fg|punt): ", "", regex=True).value_counts().to_dict()
+    # comparisons use plays the market engine decided; nfl4th-fallback plays agree with
+    # nfl4th by construction and are reported separately
+    rec = f["engine_recommendation_source"].eq("market")
+    fb = f["engine_recommendation_source"].eq("nfl4th_fallback")
+    summary["recommendation_source"] = f["engine_recommendation_source"].fillna("none").value_counts().to_dict()
+    summary["engine_recommendations"] = f.loc[rec, "engine_rec"].value_counts().to_dict()
+    summary["fallback_recommendations"] = f.loc[fb, "engine_rec"].value_counts().to_dict()
+    summary["engine_no_recommendation"] = int(f["engine_rec"].isna().sum())
+    reasons = f.loc[fb, "engine_fallback_reason"].str.split("; ").explode()
+    summary["fallback_reasons"] = reasons.str.replace(r"^(go|fg|punt): ", "", regex=True).value_counts().to_dict()
+    summary["coach_followed_fallback"] = float((f.loc[fb, "actual"] == f.loc[fb, "engine_rec"]).mean()) if fb.any() else None
     summary["nfl4th_recommendations"] = f["nfl4th_rec"].value_counts().to_dict()
     summary["confidence"] = f["engine_confidence"].value_counts().to_dict()
     summary["caution_reasons"] = f["engine_cautions"].dropna().str.split("; ").explode().value_counts().to_dict()
@@ -179,7 +186,7 @@ def main() -> None:
     fg_thr = {}
     for thr in (0.0, 0.005, 0.01, 0.02, 0.05):
         o = run_engine(f, games, folds, models, config=decision.DecisionConfig(fg_min_make_prob=thr))
-        rr = o["recommendation"]
+        rr = o["recommendation"].where(o["recommendation_source"] == "market")
         fg_thr[str(thr)] = {"recommended": int(rr.notna().sum()), "go": int((rr == "go").sum()),
                             "fg": int((rr == "fg").sum()), "punt": int((rr == "punt").sum()),
                             "refused_fg_support": int(o["no_recommendation_reason"].fillna("").str.contains("fg: outcome").sum())}

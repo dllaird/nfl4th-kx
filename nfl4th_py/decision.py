@@ -10,8 +10,10 @@ For each 4th down:
   * EV(option) = sum(prob * predicted post-play price). The option with the highest EV is
     recommended, with the gap and its uncertainty.
 
-There is no fallback to a model-based WP. If the market, the ladders or the model's
-support are not good enough, the play gets no recommendation and a reason.
+If the market, the pregame lines or the model's support are not good enough for a play,
+the market engine declines it and the play falls back to the original nfl4th
+(`fallback.py`, labeled `recommendation_source = "nfl4th_fallback"`); set
+`DecisionConfig.fallback_to_nfl4th = False` to leave such plays unrecommended.
 
 Production states differ from nfl4th's on purpose, because the market model can value
 the states that actually follow:
@@ -68,6 +70,10 @@ class DecisionConfig:
     min_support: float = 0.01  # probability-weighted support of an option's outcomes
     min_outcome_support: float = 0.002  # any outcome with prob >= 5% must have at least this
     max_qtr: int = 5  # 5 = overtime supported (with a caution); 4 refuses OT
+    # plays the market engine can't decide get the original nfl4th recommendation
+    # (win-probability valuation with betting lines), labeled recommendation_source =
+    # "nfl4th_fallback" and confidence = "fallback". False leaves them unrecommended.
+    fallback_to_nfl4th: bool = True
     # end of regulation: onside kicks, kneel-downs and last-play states are rare in the
     # data and the response model misprices them (e.g. "down 1, kicking off, 9 s left");
     # the support measure does not catch this because it treats 20 s and 120 s as close
@@ -490,6 +496,7 @@ def add_4th_probs(
     if "runoff" not in data:
         data["runoff"] = 0
     games = prep.load_games() if games is None else games
+    betting_games = games  # the fallback is the original nfl4th, with betting lines
 
     # Kalshi pregame lines replace the betting lines, per game in this frame
     keys = data[["home_team", "away_team", "type", "season"]].copy()
@@ -595,6 +602,26 @@ def add_4th_probs(
     res["prob_best_option_is_best"] = p_best
     res["go_boost"] = 100 * (res["go_ev"] - np.fmax(res["fg_ev"], res["punt_ev"].fillna(-np.inf)))
     res.loc[~np.isfinite(res["go_boost"]), "go_boost"] = np.nan
+    res["recommendation_source"] = np.where(res["recommendation"].notna(), "market", None)
+    res["fallback_reason"] = None
+
+    # fallback to the original nfl4th for plays the market engine can't decide
+    miss = res["recommendation"].isna().to_numpy()
+    if config.fallback_to_nfl4th and miss.any():
+        from nfl4th_py import fallback  # lazy: the WP models load only when a play needs them
+
+        fb = fallback.nfl4th_recommendation(data.loc[miss], betting_games)
+        idx = np.flatnonzero(miss)
+        res["recommendation"] = res["recommendation"].astype(object)
+        res.loc[idx, "fallback_reason"] = res.loc[idx, "no_recommendation_reason"].to_numpy()
+        res.loc[idx, "recommendation"] = fb["recommendation"].to_numpy()
+        res.loc[idx, "recommendation_source"] = "nfl4th_fallback"
+        res.loc[idx, "confidence"] = "fallback"
+        res.loc[idx, "no_recommendation_reason"] = None
+        res.loc[idx, "ev_gap"] = fb["gap"].to_numpy()  # win-probability points, not market points
+        for c in fallback.ORIGINAL_COLUMNS:
+            res.loc[idx, c] = fb[c].to_numpy()
+    res["no_recommendation"] = res["recommendation"].isna()
 
     # market fields
     for c in ("price", "bid_ask", "quote_age_s", "n_trades", "halted"):

@@ -1,15 +1,25 @@
 {
  "n_4th_downs": 3997,
+ "recommendation_source": {
+  "market": 3827,
+  "nfl4th_fallback": 170
+ },
  "engine_recommendations": {
   "punt": 1787,
   "fg": 1079,
   "go": 961
  },
- "engine_no_recommendation": 170,
- "refusal_reasons": {
+ "fallback_recommendations": {
+  "punt": 81,
+  "go": 78,
+  "fg": 11
+ },
+ "engine_no_recommendation": 0,
+ "fallback_reasons": {
   "outcome states outside model support": 292,
   "winner market wider than 0.1": 4
  },
+ "coach_followed_fallback": 0.7764705882352941,
  "nfl4th_recommendations": {
   "go": 1657,
   "punt": 1378,
@@ -17,7 +27,8 @@
  },
  "confidence": {
   "normal": 3244,
-  "caution": 583
+  "caution": 583,
+  "fallback": 170
  },
  "caution_reasons": {
   "price at the 1-cent tick limit: low stakes, values differ by fractions of a cent": 344,
@@ -93,6 +104,11 @@
    "mean_post_minus_ev_pts": 0.1357628259087005,
    "mae_pts": 1.666487714987046
   },
+  "engine_fallback": {
+   "n": 129,
+   "mean_post_minus_ev_pts": 0.04289355120250174,
+   "mae_pts": 0.5015335489541651
+  },
   "engine_normal": {
    "n": 3205,
    "mean_post_minus_ev_pts": 0.08541654912963606,
@@ -120,35 +136,35 @@
    "go": 960,
    "fg": 1080,
    "punt": 1787,
-   "refused_fg_support": 162
+   "refused_fg_support": 0
   },
   "0.005": {
    "recommended": 3827,
    "go": 960,
    "fg": 1080,
    "punt": 1787,
-   "refused_fg_support": 88
+   "refused_fg_support": 0
   },
   "0.01": {
    "recommended": 3827,
    "go": 961,
    "fg": 1079,
    "punt": 1787,
-   "refused_fg_support": 82
+   "refused_fg_support": 0
   },
   "0.02": {
    "recommended": 3827,
    "go": 961,
    "fg": 1079,
    "punt": 1787,
-   "refused_fg_support": 75
+   "refused_fg_support": 0
   },
   "0.05": {
    "recommended": 3827,
    "go": 963,
    "fg": 1077,
    "punt": 1787,
-   "refused_fg_support": 60
+   "refused_fg_support": 0
   }
  },
  "kicker_known_share": 1.0,

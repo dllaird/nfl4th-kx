@@ -121,9 +121,17 @@ The Kalshi-only pregame fallbacks are:
 - **Total:** if the ladder can't be fit (5 games), the median Kalshi total of that week's
   games is used.
 
-A refused play gets `recommendation = None`, `no_recommendation = True` and a
-`no_recommendation_reason`. There is no WP-model fallback. `wp_baseline` is not imported
-by this module, and `tests/test_quarantine.py` enforces that.
+**Fallback to the original nfl4th.** A play the market engine can't decide gets the
+original nfl4th recommendation instead: win-probability valuation with pregame betting
+lines and nfl4th's own field goal model (`nfl4th_py/fallback.py`). The engine was
+originally built with no fallback; this is a deliberate change made on 2026-10-05.
+- **Labels:** these plays get `recommendation_source = "nfl4th_fallback"`,
+  `confidence = "fallback"`, and the reason the market engine declined in
+  `fallback_reason`. The original nfl4th columns (`go_wp`, `fg_wp`, `punt_wp`,
+  `go_boost`, …) hold nfl4th's values, and `ev_gap` is in win-probability points.
+- **Turning it off:** set `fallback_to_nfl4th=False` to leave these plays unrecommended.
+- **Isolation:** the market path still never loads the WP models unless a play needs the
+  fallback; `tests/test_quarantine.py` enforces that.
 
 On all 3,997 4th-down plays in 2025 (out-of-sample fold models, current defaults):
 

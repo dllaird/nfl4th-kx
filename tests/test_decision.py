@@ -71,11 +71,15 @@ def test_recommends_with_ev_and_uncertainty(games):
         ({"kalshi_total_line": np.nan}, "no Kalshi pregame total"),
     ],
 )
-def test_refuses_unusable_markets(games, snap_kw, reason):
+def test_unusable_markets_fall_back_to_nfl4th(games, snap_kw, reason):
     out = run([_play()], [_snap(**snap_kw)], games)
-    assert out.loc[0, "no_recommendation"]
-    assert reason in out.loc[0, "no_recommendation_reason"]
-    assert pd.isna(out.loc[0, "go_ev"])  # nothing is valued: no fallback
+    r = out.loc[0]
+    assert r["recommendation_source"] == "nfl4th_fallback" and r["confidence"] == "fallback"
+    assert reason in r["fallback_reason"]
+    assert pd.isna(r["go_ev"])  # nothing is valued with the market
+    assert r["recommendation"] in decision.OPTIONS and 0 < r["go_wp"] < 1  # nfl4th's own values
+    off = run([_play()], [_snap(**snap_kw)], games, fallback_to_nfl4th=False)
+    assert off.loc[0, "no_recommendation"] and reason in off.loc[0, "no_recommendation_reason"]
 
 
 @pytest.mark.parametrize(
@@ -107,10 +111,39 @@ def test_clean_market_has_normal_confidence(games):
     assert out.loc[0, "confidence"] == "normal" and out.loc[0, "cautions"] is None
 
 
-def test_support_threshold_refuses(games):
+def test_support_threshold_falls_back(games):
     out = run([_play()], [_snap()], games, min_support=1.01)
-    assert out.loc[0, "no_recommendation"]
-    assert "support" in out.loc[0, "no_recommendation_reason"]
+    assert out.loc[0, "recommendation_source"] == "nfl4th_fallback"
+    assert "support" in out.loc[0, "fallback_reason"]
+    off = run([_play()], [_snap()], games, min_support=1.01, fallback_to_nfl4th=False)
+    assert off.loc[0, "no_recommendation"] and "support" in off.loc[0, "no_recommendation_reason"]
+
+
+def test_fallback_matches_original_nfl4th(games):
+    from nfl4th_py.models.wp_baseline import add_4th_probs_baseline
+
+    out = run([_play()], [_snap(price=np.nan)], games)
+    orig = add_4th_probs_baseline(pd.DataFrame([_play()]), games)
+    for c in ("go_wp", "fg_wp", "go_boost"):
+        assert out.loc[0, c] == pytest.approx(orig.loc[0, c])
+
+
+def test_market_path_does_not_load_wp_models():
+    import subprocess
+    import sys
+
+    code = (
+        "import sys, pandas as pd\n"
+        "from tests.test_decision import _play, _snap\n"
+        "from tests.conftest import FIXTURES\n"
+        "from nfl4th_py import decision\n"
+        "g = pd.read_parquet(FIXTURES / 'games.parquet')\n"
+        "out = decision.add_4th_probs(pd.DataFrame([_play()]), pd.DataFrame([_snap()]), g)\n"
+        "assert out.loc[0, 'recommendation_source'] == 'market'\n"
+        "assert 'nfl4th_py.models.wp_baseline' not in sys.modules\n"
+    )
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
 
 
 def test_fg_uses_kicker_and_drops_hopeless_attempts(games):
@@ -139,7 +172,7 @@ def test_end_of_regulation_is_recommended(games):
     out = run([_play(quarter_seconds_remaining=60)], [_snap()], games)
     assert out.loc[0, "recommendation"] in decision.OPTIONS
     off = run([_play(quarter_seconds_remaining=60)], [_snap()], games, q4_refuse_last_seconds=120)
-    assert "regulation" in off.loc[0, "no_recommendation_reason"]
+    assert "regulation" in off.loc[0, "fallback_reason"]
 
 
 def test_trailing_team_keeps_time_after_late_conversion(games):
@@ -162,7 +195,7 @@ def test_overtime_supported_with_caution(games):
     assert out.loc[0, "recommendation"] in decision.OPTIONS
     assert "overtime" in out.loc[0, "cautions"]
     off = run([_play(qtr=5)], [_snap()], games, max_qtr=4)
-    assert "overtime" in off.loc[0, "no_recommendation_reason"]
+    assert "overtime" in off.loc[0, "fallback_reason"]
 
 
 def _convert_clock(out):
