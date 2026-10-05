@@ -40,8 +40,20 @@ Decisions can be logged with `decision.log_decisions(result, raw_quotes, directo
    | punt | muff | team recovers at the spot |
    | punt | return TD | opponent at its PAT, +6 |
 
-   - **Clock:** 6 s per play. `runoff` is subtracted after a non-TD conversion; nfl4th
-     ignores it (see PORTING_NOTES §5b).
+   - **Clock:** the measured median game clock used until the next snap.
+
+     | outcome | seconds |
+     |---|---|
+     | non-TD conversion | 38 (14 in a half's last 2 min) |
+     | failure, safety, TD | 5 |
+     | FG make/miss | 4 |
+     | punt | 9 |
+
+     nfl4th uses 6 s for everything, which understated a conversion's clock use by about
+     30 s and doubled a bias against going for it (VALIDATION.md §5).
+     - The clock stops at the two-minute warning.
+     - `runoff` overrides a conversion's clock use when 6 + runoff is larger. nfl4th
+       ignores `runoff` (see PORTING_NOTES §5b).
    - **End of the 1st half:** the state becomes the Q3 kickoff to the 2nd-half receiver.
    - **End of game:** the outcome is valued exactly (1 or 0). A tie at the end of
      regulation means OT, which gets support 0.
@@ -67,6 +79,7 @@ Decisions can be logged with `decision.log_decisions(result, raw_quotes, directo
 | halted | — | — |
 | Kalshi spread or total ladder missing or quality < min_ladder_quality | 0.2 | no team-strength features, and no fallback to the betting line |
 | qtr > max_qtr | 4 | OT clock logic is outside nfl4th's components |
+| Q4 with ≤ q4_refuse_last_seconds left | 120 s | end-of-game states (onside kicks, last plays) are mispriced, and the support measure misses them (VALIDATION.md §5) |
 | option support (probability-weighted) < min_support | 0.01 | outside the model's data |
 | any outcome with prob ≥ 5% and support < min_outcome_support | 0.002 | as above |
 
@@ -75,25 +88,9 @@ A refused play gets `recommendation = None`, `no_recommendation = True` and a
 `wp_baseline` is not imported by this module, and `tests/test_quarantine.py` enforces
 that.
 
-On all 3,997 4th-down plays in 2025, the defaults give:
-- **recommendations:** punt 1,172; FG 820; go 545;
-- **refused:** 1,460 (36.5%).
-
-Refusal reasons (a play can have several):
-
-| reason | plays |
-|---|---|
-| outcome states outside support | 624 |
-| price outside [0.03, 0.97] | 535 |
-| pregame ladder unusable | 154 spread / 115 total |
-| stale price | 77 |
-| wide market | 73 |
-| no price | 31 |
-| halted | 31 |
-| OT | 24 |
-
-The "too thin" count (340) was measured with min_trades = 1, before it was switched off.
-Phase 8 re-measures the rates with the final defaults.
+On all 3,997 4th-down plays in 2025 (out-of-sample fold models, final defaults):
+- **recommendations:** punt 934; FG 825; go 685;
+- **refused:** 1,553 (38.9%). Breakdown in VALIDATION.md §2.
 
 ## Anchoring: does conditioning on the pre-play price bias counterfactual values?
 The pre-snap price already reflects the market's expectation of the decision and its

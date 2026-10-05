@@ -41,9 +41,10 @@ def games():
     return g
 
 
-def run(plays, snaps, games, **cfg):
+def run(plays, snaps, games, return_outcomes=False, **cfg):
     return decision.add_4th_probs(
-        pd.DataFrame(plays), pd.DataFrame(snaps), games, config=decision.DecisionConfig(**cfg)
+        pd.DataFrame(plays), pd.DataFrame(snaps), games, config=decision.DecisionConfig(**cfg),
+        return_outcomes=return_outcomes,
     )
 
 
@@ -90,18 +91,34 @@ def test_no_punt_inside_31(games):
     assert pd.isna(out.loc[0, "punt_ev"])
 
 
+def test_end_of_regulation_refused(games):
+    out = run([_play(quarter_seconds_remaining=60)], [_snap()], games)
+    assert "regulation" in out.loc[0, "no_recommendation_reason"]
+
+
 def test_ot_refused(games):
     out = run([_play(qtr=5)], [_snap()], games)
     assert "overtime" in out.loc[0, "no_recommendation_reason"]
 
 
-def test_runoff_is_applied(games):
-    a = run([_play(score_differential=3, quarter_seconds_remaining=200)], [_snap(price=0.8)], games)
-    b = run([_play(score_differential=3, quarter_seconds_remaining=200, runoff=40)], [_snap(price=0.8)], games)
-    ga, gb = (x.attrs["outcomes"]["go"] for x in (a, b))
-    conv_a = ga[ga.outcome == "convert"]["post_game_seconds_remaining"].iloc[0]
-    conv_b = gb[gb.outcome == "convert"]["post_game_seconds_remaining"].iloc[0]
-    assert conv_a - conv_b == pytest.approx(40)
+def _convert_clock(out):
+    go = out["go"]
+    return go[go.outcome == "convert"]["post_game_seconds_remaining"].iloc[0]
+
+
+def test_conversion_clock_and_runoff(games):
+    # Q4, 10:00 left: a conversion uses the measured 38 s; runoff 40 -> 6 + 40 = 46 s
+    _, a = run([_play(quarter_seconds_remaining=600)], [_snap()], games, True)
+    _, b = run([_play(quarter_seconds_remaining=600, runoff=40)], [_snap()], games, True)
+    assert _convert_clock(a) == pytest.approx(600 - 38)
+    assert _convert_clock(b) == pytest.approx(600 - 46)
+    fail = a["go"][a["go"].outcome == "fail"]["post_game_seconds_remaining"].iloc[0]
+    assert fail == pytest.approx(600 - 5)
+
+
+def test_two_minute_warning_stops_clock(games):
+    _, a = run([_play(qtr=2, quarter_seconds_remaining=140)], [_snap()], games, True)
+    assert _convert_clock(a) == pytest.approx(1800 + 120)
 
 
 def test_decision_log(tmp_path, games):

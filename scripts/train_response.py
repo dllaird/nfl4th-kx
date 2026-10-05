@@ -261,10 +261,13 @@ def main() -> None:
     for k in range(5):
         tr_games = {g for g in games if fold_of[g] != k}
         tmk, vsk = fit_pair(d, all_plays, tr_games)
+        tmk.save(ROOT / "data_cache" / "response_folds" / str(k))
         rows = d[d["game_id"].map(fold_of) == k]
         oof.append(pd.concat([rows, predict_all(tmk, vsk, rows)], axis=1))
         log.info("fold %d done (%d rows)", k, len(rows))
     oof = pd.concat(oof)
+    pd.Series(fold_of, name="fold").rename_axis("game_id").reset_index().to_parquet(
+        ROOT / "data_cache" / "response_folds" / "folds.parquet")
     if not args.skip_baseline:
         oof["pred_wp_baseline"] = baseline_predictions(oof)
 
@@ -274,6 +277,11 @@ def main() -> None:
     inr = oof["pre_price"].between(*IN_RANGE)
     tmf.sd_scale = float(np.quantile(z[inr].abs(), 0.90) / 1.645)
     log.info("sd_scale from out-of-fold residuals: %.3f", tmf.sd_scale)
+    for k in range(5):  # fold models share the out-of-fold sd calibration
+        fold_dir = ROOT / "data_cache" / "response_folds" / str(k)
+        mk = R.TransitionModel.load(fold_dir)
+        mk.sd_scale = tmf.sd_scale
+        mk.save(fold_dir)
     tmf.save(MODEL_DIR)
     vsf.save(MODEL_DIR)
 

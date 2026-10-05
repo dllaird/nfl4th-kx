@@ -56,6 +56,19 @@ class DecisionConfig:
     min_support: float = 0.01  # probability-weighted support of an option's outcomes
     min_outcome_support: float = 0.002  # any outcome with prob >= 5% must have at least this
     max_qtr: int = 4  # OT is outside nfl4th's components (clock logic); refuse
+    # end of regulation: onside kicks, kneel-downs and last-play states are rare in the
+    # data and the response model misprices them (e.g. "down 1, kicking off, 9 s left");
+    # the support measure does not catch this because it treats 20 s and 120 s as close
+    q4_refuse_last_seconds: float = 120.0
+    # game seconds used until the next snap, by outcome: medians measured on 2025 plays
+    # (DECISION.md). nfl4th uses 6 s for everything, which misprices conversions, after
+    # which the clock usually keeps running (~38 s).
+    clock_convert: float = 38.0
+    clock_convert_last2min: float = 14.0  # last 2 minutes of a half
+    clock_fail: float = 5.0
+    clock_td: float = 5.0
+    clock_fg: float = 4.0
+    clock_punt: float = 9.0
 
 
 @cache
@@ -106,6 +119,33 @@ def _end_of_half(p: pd.DataFrame, second_half_receiver_is_team: np.ndarray) -> N
         p.loc[eoh, "post_game_seconds_remaining"] = 1800.0
         p.loc[eoh, "post_half_seconds_remaining"] = 1800.0
         _set_kind(p, eoh, "kickoff", second_half_receiver_is_team, 35.0)
+
+
+def _apply_clock(p: pd.DataFrame, pre: pd.DataFrame, used: np.ndarray) -> None:
+    """Post-state clock = pre-play clock - `used` seconds (per row), floored at 0, and
+    stopped at the two-minute warning when a Q2/Q4 play crosses it."""
+    qsr0 = pre["quarter_seconds_remaining"].to_numpy(float)
+    half0 = pre["half_seconds_remaining"].to_numpy(float)
+    game0 = pre["game_seconds_remaining"].to_numpy(float)
+    q = pre["qtr"].to_numpy()
+    used = np.minimum(used, half0)
+    crosses = np.isin(q, [2, 4]) & (qsr0 > 120) & (qsr0 - used < 120)
+    used = np.where(crosses, qsr0 - 120, used)
+    p["post_half_seconds_remaining"] = np.maximum(half0 - used, 0)
+    p["post_game_seconds_remaining"] = np.maximum(game0 - used, 0)
+
+
+def _clock_used(outcome: np.ndarray, pre: pd.DataFrame, runoff: np.ndarray, cfg: DecisionConfig) -> np.ndarray:
+    late = np.isin(pre["qtr"].to_numpy(), [2, 4]) & (pre["quarter_seconds_remaining"].to_numpy(float) <= 120)
+    convert = np.where(late, cfg.clock_convert_last2min, cfg.clock_convert)
+    table = {"convert": convert, "td": cfg.clock_td, "fail": cfg.clock_fail, "safety": cfg.clock_fail,
+             "make": cfg.clock_fg, "miss": cfg.clock_fg, "normal": cfg.clock_punt, "blocked": cfg.clock_punt,
+             "muff": cfg.clock_punt, "return_td": cfg.clock_punt}
+    used = np.array([np.asarray(table[o]) if np.ndim(table[o]) == 0 else table[o][i]
+                     for i, o in enumerate(outcome)], dtype=float)
+    # nfl4th's `runoff` input: extra clock after a non-TD conversion (e.g. a leading team
+    # bleeding the clock); applied on top of nfl4th's 6 s, so it overrides when larger
+    return np.where(outcome == "convert", np.maximum(used, 6 + runoff), used)
 
 
 def go_states(prepared: pd.DataFrame) -> pd.DataFrame:
@@ -216,12 +256,21 @@ def _pre_columns(prepared: pd.DataFrame, pre_price: np.ndarray) -> pd.DataFrame:
         }
     )
     pre["receives_2h"] = receives_2h
+    pre["quarter_seconds_remaining"] = prepared["quarter_seconds_remaining"].to_numpy(float)
+    pre["runoff"] = prepared["runoff"].fillna(0).to_numpy(float)
     return pre
 
 
-def value_option(states: pd.DataFrame, pre: pd.DataFrame, model: TransitionModel) -> pd.DataFrame:
-    """Attach the pre-play columns, handle end of half/game, predict each outcome."""
+def value_option(
+    states: pd.DataFrame, pre: pd.DataFrame, model: TransitionModel, cfg: DecisionConfig = DecisionConfig()
+) -> pd.DataFrame:
+    """Set each outcome's clock, attach the pre-play columns, handle end of half/game,
+    predict each outcome."""
     s = states.copy()
+    rows_pre = pre.iloc[s["play"].to_numpy()].reset_index(drop=True)
+    s = s.reset_index(drop=True)
+    used = _clock_used(s["outcome"].to_numpy(), rows_pre, rows_pre["runoff"].to_numpy(), cfg)
+    _apply_clock(s, rows_pre, used)
     _end_of_half(s, pre["receives_2h"].to_numpy()[s["play"].to_numpy()])
     t = pd.concat([pre.iloc[s["play"].to_numpy()].reset_index(drop=True), s.reset_index(drop=True)], axis=1)
     pred = model.predict(t)
@@ -295,6 +344,8 @@ def _market_reasons(snap: pd.DataFrame, prepared: pd.DataFrame, cfg: DecisionCon
     add(snap["kalshi_total_line"].isna() | (snap["kalshi_total_quality"].fillna(0) < cfg.min_ladder_quality),
         "Kalshi pregame total ladder unusable")
     add(prepared["qtr"].to_numpy() > cfg.max_qtr, "overtime not supported")
+    add((prepared["qtr"].to_numpy() == 4) & (prepared["quarter_seconds_remaining"].to_numpy() <= cfg.q4_refuse_last_seconds),
+        f"final {cfg.q4_refuse_last_seconds:.0f}s of regulation not supported")
     return reasons
 
 
@@ -304,7 +355,8 @@ def add_4th_probs(
     games: pd.DataFrame | None = None,
     config: DecisionConfig = DecisionConfig(),
     model: TransitionModel | None = None,
-) -> pd.DataFrame:
+    return_outcomes: bool = False,
+) -> pd.DataFrame | tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
     """nfl4th's add_4th_probs() valued with Kalshi markets.
 
     `df`: nfl4th Path A input columns (see prep.REQUIRED_4TH_COLUMNS), optional `runoff`.
@@ -314,7 +366,8 @@ def add_4th_probs(
 
     Returns `df` plus the original nfl4th columns (WPs are market-implied prices here),
     market fields, per-outcome predictions, EV/uncertainty per option, and
-    `recommendation` / `no_recommendation_reason`.
+    `recommendation` / `no_recommendation_reason`. With `return_outcomes=True`, also
+    returns {option: per-outcome table (play, outcome, prob, state, price, sd, support)}.
     """
     prep.validate_4th_input(df)
     missing = [c for c in SNAPSHOT_COLUMNS if c not in market_snapshot]
@@ -360,7 +413,7 @@ def add_4th_probs(
             states = builder(sub)
             if states.empty:  # e.g. no punt rows inside the 31
                 continue
-            v = value_option(states, pre, model)
+            v = value_option(states, pre, model, config)
             v["play"] = idx[v["play"].to_numpy()]
             valued[option] = v
         for option, v in valued.items():
@@ -430,9 +483,8 @@ def add_4th_probs(
     out["kalshi_posteam_spread"] = prepared["posteam_spread"].to_numpy()
     for c in res.columns:
         out[c] = res[c].to_numpy()
-    out.attrs["outcomes"] = valued
     out.attrs["config"] = asdict(config)
-    return out
+    return (out, valued) if return_outcomes else out
 
 
 def log_decisions(result: pd.DataFrame, raw_quotes: list[dict] | None, directory: Path | str) -> Path:

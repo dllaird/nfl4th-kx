@@ -1,0 +1,157 @@
+{
+ "n_4th_downs": 3997,
+ "engine_recommendations": {
+  "punt": 934,
+  "fg": 825,
+  "go": 685
+ },
+ "engine_no_recommendation": 1553,
+ "refusal_reasons": {
+  "outcome states outside model support": 666,
+  "winner price outside [0.03, 0.97]": 535,
+  "final 120s of regulation not supported": 250,
+  "Kalshi pregame spread ladder unusable": 154,
+  "Kalshi pregame total ladder unusable": 115,
+  "winner price stale (> 30s)": 77,
+  "winner market wider than 0.04": 73,
+  "no winner-market price": 31,
+  "winner market halted": 31,
+  "overtime not supported": 24
+ },
+ "nfl4th_recommendations": {
+  "go": 1655,
+  "punt": 1381,
+  "fg": 961
+ },
+ "agreement_engine_vs_nfl4th": 0.779050736497545,
+ "confusion_engine_rows_nfl4th_cols": {
+  "fg": {
+   "fg": 625,
+   "go": 48,
+   "punt": 61
+  },
+  "go": {
+   "fg": 200,
+   "go": 625,
+   "punt": 219
+  },
+  "punt": {
+   "fg": 0,
+   "go": 12,
+   "punt": 654
+  }
+ },
+ "coach_followed_engine": 0.8248772504091653,
+ "coach_followed_nfl4th": 0.7254500818330606,
+ "disagreements": {
+  "n": 540,
+  "market_ev_gain_engine_vs_nfl4th_pts_mean": 0.846681335827312,
+  "nfl4th_wp_gain_nfl4th_vs_engine_pts_mean": 1.1289709913815975,
+  "share_engine_gap_within_1sd": 0.9666666666666667,
+  "share_nfl4th_margin_lt_1pt": 0.5833333333333334
+ },
+ "ev_calibration_vs_settled_price": {
+  "engine": {
+   "n": 3052,
+   "mean_post_minus_ev_pts": 0.0974468698002546,
+   "mae_pts": 2.6287802306244563,
+   "corr_ev_vs_post": 0.9873539508579093,
+   "mean_ev_minus_pre_pts": -0.19712881351775588,
+   "go_mean_post_minus_ev_pts": 0.5052019243416737,
+   "go_n": 552,
+   "fg_mean_post_minus_ev_pts": 0.047986185478378386,
+   "fg_n": 832,
+   "punt_mean_post_minus_ev_pts": -0.012822615062492595,
+   "punt_n": 1668
+  },
+  "nfl4th": {
+   "n": 3388,
+   "mean_post_minus_ev_pts": -0.3707748875483541,
+   "mae_pts": 4.627771160453818,
+   "corr_ev_vs_post": 0.9684000700047013,
+   "mean_ev_minus_pre_pts": 0.26549706035465626,
+   "go_mean_post_minus_ev_pts": 0.6671670669261861,
+   "go_n": 640,
+   "fg_mean_post_minus_ev_pts": -0.735121183347334,
+   "fg_n": 924,
+   "punt_mean_post_minus_ev_pts": -0.5503948840096745,
+   "punt_n": 1824
+  },
+  "market_mean_post_minus_pre_pts": -0.10527782719369794
+ },
+ "disagreement_market_move_by_choice_pts": {
+  "engine": {
+   "mean": -0.4773605456997915,
+   "size": 387
+  },
+  "neither": {
+   "mean": -1.5655884645441744,
+   "size": 9
+  },
+  "nfl4th": {
+   "mean": 0.16613776630704852,
+   "size": 144
+  }
+ },
+ "sensitivity": {
+  "price_-0.01": {
+   "n": 2393,
+   "flip_rate": 0.00459674049310489,
+   "mean_abs_change_go_boost_pts": 0.04867515348771995
+  },
+  "price_+0.01": {
+   "n": 2423,
+   "flip_rate": 0.004127115146512587,
+   "mean_abs_change_go_boost_pts": 0.05007443765150462
+  },
+  "posteam_spread_-1": {
+   "n": 2444,
+   "flip_rate": 0.009819967266775777,
+   "mean_abs_change_go_boost_pts": 0.049974961756725764
+  },
+  "posteam_spread_+1": {
+   "n": 2444,
+   "flip_rate": 0.010229132569558102,
+   "mean_abs_change_go_boost_pts": 0.0534949868818173
+  },
+  "stale_5s": {
+   "n": 2391,
+   "flip_rate": 0.002509410288582183,
+   "mean_abs_change_go_boost_pts": 0.02765134583930286,
+   "flip_rate_per_second": 0.0005018820577164366
+  },
+  "stale_10s": {
+   "n": 2386,
+   "flip_rate": 0.003352891869237217,
+   "mean_abs_change_go_boost_pts": 0.03291263956956946,
+   "flip_rate_per_second": 0.00033528918692372173
+  },
+  "stale_20s": {
+   "n": 2392,
+   "flip_rate": 0.003762541806020067,
+   "mean_abs_change_go_boost_pts": 0.04323392025309474,
+   "flip_rate_per_second": 0.00018812709030100334
+  },
+  "stale_30s": {
+   "n": 2396,
+   "flip_rate": 0.0070951585976627716,
+   "mean_abs_change_go_boost_pts": 0.07871411492563317,
+   "flip_rate_per_second": 0.00023650528658875904
+  },
+  "stale_60s": {
+   "n": 2379,
+   "flip_rate": 0.01639344262295082,
+   "mean_abs_change_go_boost_pts": 0.13234888051537547,
+   "flip_rate_per_second": 0.000273224043715847
+  }
+ },
+ "market_usability_all_plays": {
+  "n_plays": 45186,
+  "no_price": 0.0064843092993405035,
+  "price_outside_0.03_0.97": 0.1343557739122737,
+  "stale_gt_30s": 0.015602177665648653,
+  "candle_bid_ask_gt_0.04": 0.013455495064843092,
+  "no_trade_60s_before_snap": 0.0064843092993405035,
+  "games_without_usable_pregame_ladders": 6
+ }
+}

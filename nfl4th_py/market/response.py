@@ -204,11 +204,17 @@ class TransitionModel:
     # multiplies the sd model so that +-1.645 sd covers 90% of out-of-fold residuals
     sd_scale: float = 1.0
 
+    # training weight for transitions starting on 4th down (rare, and the target use)
+    fourth_down_weight: float = 1.0
+
+    def _weights(self, t: pd.DataFrame) -> np.ndarray:
+        return np.where(t["down"].to_numpy() == 4, self.fourth_down_weight, 1.0)
+
     def fit(self, t: pd.DataFrame, y_logit: np.ndarray, t_val: pd.DataFrame, y_val: np.ndarray, rounds: int = 3000) -> TransitionModel:
         x, xv = transition_matrix(t), transition_matrix(t_val)
         params = dict(self.params, monotone_constraints=_monotone_tuple(TRANSITION_FEATURES, TRANSITION_MONOTONE))
-        dtr = xgb.DMatrix(x, label=y_logit, base_margin=x["pre_logit"].to_numpy())
-        dva = xgb.DMatrix(xv, label=y_val, base_margin=xv["pre_logit"].to_numpy())
+        dtr = xgb.DMatrix(x, label=y_logit, base_margin=x["pre_logit"].to_numpy(), weight=self._weights(t))
+        dva = xgb.DMatrix(xv, label=y_val, base_margin=xv["pre_logit"].to_numpy(), weight=self._weights(t_val))
         self.booster = xgb.train(params, dtr, rounds, evals=[(dva, "val")], early_stopping_rounds=100, verbose_eval=False)
         # heteroscedastic uncertainty: model |residual| on validation rows (out of sample)
         resid = np.abs(y_val - self.predict_logit(t_val))
@@ -245,7 +251,7 @@ class TransitionModel:
         (directory / "transition_meta.json").write_text(
             json.dumps({"features": TRANSITION_FEATURES, "support_columns": SUPPORT_COLUMNS,
                         "best_iteration": self.booster.best_iteration, "params": self.params,
-                        "sd_scale": self.sd_scale}, indent=1)
+                        "sd_scale": self.sd_scale, "fourth_down_weight": self.fourth_down_weight}, indent=1)
         )
 
     @classmethod
@@ -261,6 +267,7 @@ class TransitionModel:
         m.sd_booster.load_model(directory / "transition_sd.json")
         s = np.load(directory / "transition_support.npz")
         m.sd_scale = float(meta.get("sd_scale", 1.0))
+        m.fourth_down_weight = float(meta.get("fourth_down_weight", 1.0))
         m.support = Support(meta["support_columns"], s["mean"], s["scale"], cKDTree(s["data"]), int(s["k"]), s["ref_quantiles"])
         return m
 
