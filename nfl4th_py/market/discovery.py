@@ -44,10 +44,12 @@ def market_suffix(ticker: str) -> str:
     return ticker.rsplit("-", 1)[1]
 
 
-def fetch_markets(client: KalshiClient, series: list[str], historical: bool) -> pd.DataFrame:
+def fetch_markets(
+    client: KalshiClient, series: list[str], historical: bool, status: str | None = None
+) -> pd.DataFrame:
     rows = []
     for s in series:
-        for m in client.iter_markets(series_ticker=s, historical=historical):
+        for m in client.iter_markets(series_ticker=s, historical=historical, status=status):
             m["series_ticker"] = s
             rows.append(m)
     df = pd.DataFrame(rows).drop(columns=["custom_strike"], errors="ignore")

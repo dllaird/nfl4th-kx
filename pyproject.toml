@@ -18,6 +18,9 @@ dependencies = [
   "scipy>=1.11",     # ladder distribution fits (normal / skew-normal)
 ]
 
+[project.scripts]
+nfl4th-py = "nfl4th_py.cli:main"
+
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
@@ -25,7 +28,7 @@ dev = ["pytest>=8"]
 include = ["nfl4th_py*"]
 
 [tool.setuptools.package-data]
-nfl4th_py = ["data/*.json", "data/*.json.gz", "data/*.parquet"]
+nfl4th_py = ["data/*.json", "data/*.json.gz", "data/*.parquet", "data/response/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

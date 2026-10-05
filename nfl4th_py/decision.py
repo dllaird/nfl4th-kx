@@ -324,7 +324,12 @@ def add_4th_probs(
         raise ValueError("market_snapshot must have one row per play")
     model = model or response_model()
     data = df.reset_index(drop=True).copy()
-    snap = market_snapshot.reset_index(drop=True)
+    snap = market_snapshot.reset_index(drop=True).copy()
+    for c in SNAPSHOT_COLUMNS:
+        if c == "halted":
+            snap[c] = snap[c].map(lambda v: bool(v) if pd.notna(v) else False)
+        else:
+            snap[c] = pd.to_numeric(snap[c], errors="coerce").astype(float)
     if "runoff" not in data:
         data["runoff"] = 0
     games = prep.load_games() if games is None else games

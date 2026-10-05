@@ -104,10 +104,19 @@ class KalshiClient:
         )
 
     def iter_markets(
-        self, *, series_ticker: str | None = None, event_ticker: str | None = None, historical: bool = False
+        self,
+        *,
+        series_ticker: str | None = None,
+        event_ticker: str | None = None,
+        tickers: list[str] | None = None,
+        status: str | None = None,
+        historical: bool = False,
     ) -> Iterator[dict]:
         path = "/historical/markets" if historical else "/markets"
-        params = {"series_ticker": series_ticker, "event_ticker": event_ticker, "limit": 1000}
+        params = {
+            "series_ticker": series_ticker, "event_ticker": event_ticker, "limit": 1000,
+            "tickers": ",".join(tickers) if tickers else None, "status": None if historical else status,
+        }
         return (normalize_market(m) for m in self.paginate(path, "markets", params))
 
     # -- market data -------------------------------------------------------------
