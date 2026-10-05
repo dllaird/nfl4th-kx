@@ -103,15 +103,21 @@ A **hard rule** refuses the recommendation. A **caution** still recommends but s
 | price age | > 120 s | 30–120 s | flips < 1.6% of recommendations even at 60 s (VALIDATION §3) |
 | bid/ask width | > 10¢ | 4–10¢ | |
 | no trade in 60 s | — | price from the last quote | |
-| Kalshi pregame spread / total | missing | fit quality < 0.2, or a Kalshi-only fallback | weak ladders are still within 1–2 points of the betting line |
+| Kalshi pregame spread | missing | only when it comes from the winner price alone | a weak ladder (quality < 0.2) is averaged with the winner-price spread instead |
+| Kalshi pregame total | missing | fit quality < 0.2, or the week-median fallback | the winner price carries no information about the total |
 | overtime | `max_qtr` = 5 (set 4 to refuse) | always | few training states |
 | last 2 min of Q4 | `q4_refuse_last_seconds` = 0 (off) | — | handled by the clock and kneel-out rules above |
 | FG make probability < `fg_min_make_prob` | FG not offered | — | a hopeless attempt is not an option |
 | option support (probability-weighted) < 0.01, or an outcome with prob ≥ 5% and support < 0.002 | refuse only if fewer than two options remain | option left out, named in a caution | outside the model's data |
 
 The Kalshi-only pregame fallbacks are:
-- **Spread:** if the ladder can't be fit (1 game in 2025), it is implied from the Kalshi
-  pregame winner price with a normal margin (sd 13.5).
+- **Spread:**
+  - **Ladder can't be fit** (1 game in 2025): the spread is implied from the Kalshi
+    pregame winner price with a normal margin (sd 13.5).
+  - **Weak ladder fit** (quality < 0.2, 10 games): the spread is the average of the
+    ladder and the winner-price spread. On those games the average misses the betting
+    line by 0.76 points, against 1.22 for the ladder alone and 0.95 for the winner price
+    alone.
 - **Total:** if the ladder can't be fit (5 games), the median Kalshi total of that week's
   games is used.
 
@@ -123,9 +129,9 @@ On all 3,997 4th-down plays in 2025 (out-of-sample fold models, current defaults
 
 | | plays |
 |---|---|
-| recommended | 3,827 (95.7%): punt 1,792, FG 1,087, go 948 |
-| normal confidence | 3,197 |
-| caution | 630 (335 are tick-limit toss-ups) |
+| recommended | 3,827 (95.7%): punt 1,787, FG 1,079, go 961 |
+| normal confidence | 3,244 |
+| caution | 583 (334 are tick-limit toss-ups) |
 | refused | 170 (4.3%), all model support except 4 very wide markets |
 
 Breakdown in VALIDATION.md §2.

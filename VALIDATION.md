@@ -56,9 +56,9 @@ Field goal make probabilities come from the kicker-specific model fit on 2014–
 ### Coverage
 | | count |
 |---|---|
-| engine recommendation | **3,827 (95.7%)**: punt 1,792, FG 1,087, go 948 |
-| of which normal confidence | 3,197 |
-| of which caution | 630 |
+| engine recommendation | **3,827 (95.7%)**: punt 1,787, FG 1,079, go 961 |
+| of which normal confidence | 3,244 |
+| of which caution | 583 |
 | no recommendation | 170 (4.3%) |
 | original nfl4th (betting lines) | go 1,655, punt 1,381, FG 961 (always recommends) |
 
@@ -69,8 +69,8 @@ Field goal make probabilities come from the kicker-specific model fit on 2014–
   | caution | plays |
   |---|---|
   | price at the 1¢ tick limit (below 2% or above 98%) | 344 |
-  | tick-limit toss-up (options within one tick) | 335 |
-  | weak pregame spread / total ladder fit | 129 / 38 |
+  | tick-limit toss-up (options within one tick) | 334 |
+  | weak pregame total ladder fit | 38 |
   | an option left out for low support | 101 (15 where its unreliable value would have ranked first) |
   | Kalshi total from the week-median fallback / spread from the winner price | 74 / 9 |
   | market 4–10¢ wide | 69 |
@@ -265,8 +265,10 @@ extreme prices, and 104 (2.6%) for stale, wide, halted or missing prices.
        punt), and it is labeled a toss-up.
    - **Market thresholds:** stale and wide markets are cautions up to 120 s and 10¢. A
      missing trade price falls back to the last 1-minute quote.
-   - **Pregame lines:** weak ladder fits are cautions. Missing ladders use Kalshi-only
-     fallbacks: spread from the pregame winner price, total from the week's median.
+   - **Pregame lines:** a weak spread ladder is averaged with the winner-price spread (no
+     caution; it beats either source alone). A weak total ladder is a caution. Missing
+     ladders use Kalshi-only fallbacks: spread from the pregame winner price, total from
+     the week's median.
      This also added the 6 week-1 games to the response model's training data (285
      games; out-of-sample 4th-down logit RMSE 0.180 vs 0.185).
    - **Overtime:** supported with OT's own clock, and a tie when time expires is valued

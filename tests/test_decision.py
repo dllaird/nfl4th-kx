@@ -97,6 +97,11 @@ def test_marginal_markets_recommend_with_caution(games, play_kw, snap_kw, cautio
     assert caution in out.loc[0, "cautions"]
 
 
+def test_blended_spread_is_not_a_caution(games):
+    out = run([_play()], [_snap(kalshi_spread_quality=0.05, kalshi_spread_source="ladder+winner_price")], games)
+    assert out.loc[0, "confidence"] == "normal"
+
+
 def test_clean_market_has_normal_confidence(games):
     out = run([_play()], [_snap()], games)
     assert out.loc[0, "confidence"] == "normal" and out.loc[0, "cautions"] is None

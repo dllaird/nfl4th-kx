@@ -33,7 +33,7 @@ game-winner market reprices after plays:
 | Kalshi data | All 285 games of the 2025 season: winner, spread and total markets. Trade tape and 1-minute candles, via the public API |
 | Market-response model | Average error of 1.1 cents on post-play prices, vs 1.5 for nfl4th's win-probability models anchored to the same price (out-of-sample) |
 | Field goals | Kicker-specific model, out-of-sample on 2025 field goals: log loss 0.360 vs 0.365 for nfl4th's model |
-| Decision engine | Out-of-sample backtest on 3,997 2025 fourth downs. Recommends on 95.7% (3,827), including the final 2 minutes and overtime; 630 carry a caution |
+| Decision engine | Out-of-sample backtest on 3,997 2025 fourth downs. Recommends on 95.7% (3,827), including the final 2 minutes and overtime; 583 carry a caution |
 | Live mode | `nfl4th-py live`, tested against live Kalshi orderbooks but not yet during a game |
 
 Details:

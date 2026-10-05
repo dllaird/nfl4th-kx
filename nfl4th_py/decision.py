@@ -432,7 +432,10 @@ def _market_reasons(snap: pd.DataFrame, prepared: pd.DataFrame, cfg: DecisionCon
         line, q = snap[f"kalshi_{k}_line"], snap[f"kalshi_{k}_quality"].fillna(0)
         src = snap.get(f"kalshi_{k}_source", pd.Series("ladder", index=snap.index)).fillna("ladder")
         add(hard, line.isna() | ((src == "ladder") & (q < cfg.min_ladder_quality)), f"no Kalshi pregame {k}")
-        add(caution, line.notna() & (src != "ladder"), f"Kalshi pregame {k} from fallback ({'winner price' if k == 'spread' else 'week median'})")
+        # a weak spread ladder averaged with the winner-price spread is not a caution: on 2025
+        # games it beats either source alone (market/pregame.py)
+        add(caution, line.notna() & src.isin(["winner_price", "week_median"]),
+            f"Kalshi pregame {k} from fallback ({'winner price' if k == 'spread' else 'week median'})")
         add(caution, line.notna() & (src == "ladder") & (q < cfg.caution_ladder_quality), f"Kalshi pregame {k} ladder fit is weak")
     qtr = prepared["qtr"].to_numpy()
     add(hard, qtr > cfg.max_qtr, "overtime not supported")

@@ -15,6 +15,10 @@ from scipy.stats import norm
 from nfl4th_py.market import ladders
 
 MARGIN_SD = 13.5  # typical sd of an NFL final margin, used to turn a win price into a spread
+# below this ladder fit quality the spread is the average of the ladder and the
+# winner-price-implied spread: on the 10 such 2025 games the average misses the betting
+# line by 0.76 points, the ladder alone by 1.22, the winner price alone by 0.95
+WEAK_LADDER_QUALITY = 0.2
 
 SNAPSHOT_COLUMNS = ["ticker", "bid", "ask", "age_s", "volume", "vwap", "vwap_age_s"]
 
@@ -79,12 +83,16 @@ def game_strength(
 
     win = snap["KXNFLGAME"].join(meta, on="ticker")
     home_win = _home_win_price(win, game["home_team"], game["away_team"])
-    # Kalshi-only fallback when the spread ladder can't be fit: the pregame winner price
-    # implies a mean margin under a normal margin distribution
-    spread_source = "ladder" if m_fit.mean is not None else ("winner_price" if home_win is not None else "none")
-    if m_fit.mean is None and home_win is not None:
-        m_fit.mean = m_fit.median = float(MARGIN_SD * norm.ppf(np.clip(home_win, 0.01, 0.99)))
+    # The pregame winner price implies a mean margin under a normal margin distribution.
+    # It replaces a spread ladder that can't be fit, and is averaged with a weak one.
+    implied = None if home_win is None else float(MARGIN_SD * norm.ppf(np.clip(home_win, 0.01, 0.99)))
+    spread_source = "ladder" if m_fit.mean is not None else ("winner_price" if implied is not None else "none")
+    if m_fit.mean is None and implied is not None:
+        m_fit.mean = m_fit.median = implied
         m_fit.sd, m_fit.model = MARGIN_SD, "winner_price"
+    elif m_fit.mean is not None and implied is not None and m_fit.quality < WEAK_LADDER_QUALITY:
+        m_fit.mean = m_fit.median = (m_fit.mean + implied) / 2
+        spread_source = "ladder+winner_price"
     return {
         "kalshi_spread_source": spread_source,
         "kalshi_total_source": "ladder" if t_fit.mean is not None else "none",
